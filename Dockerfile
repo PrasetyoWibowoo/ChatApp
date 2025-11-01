@@ -1,4 +1,4 @@
-FROM rust:1.82 as builder
+FROM rust:latest as builder
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY apps/backend/Cargo.toml ./
 COPY apps/backend/src ./src
 COPY apps/backend/migrations ./migrations
 
-# Build release
+# Build release with clean cache
 RUN cargo build --release
 
 # Runtime stage
