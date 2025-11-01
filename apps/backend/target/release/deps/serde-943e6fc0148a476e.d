@@ -1,0 +1,14 @@
+C:\Users\wibow\Collaboration Notes\apps\backend\target\release\deps\serde-943e6fc0148a476e.d: C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\wibow\Collaboration\ Notes\apps\backend\target\release\build\serde-2d7e6a30e1c23da7\out/private.rs
+
+C:\Users\wibow\Collaboration Notes\apps\backend\target\release\deps\libserde-943e6fc0148a476e.rlib: C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\wibow\Collaboration\ Notes\apps\backend\target\release\build\serde-2d7e6a30e1c23da7\out/private.rs
+
+C:\Users\wibow\Collaboration Notes\apps\backend\target\release\deps\libserde-943e6fc0148a476e.rmeta: C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\wibow\Collaboration\ Notes\apps\backend\target\release\build\serde-2d7e6a30e1c23da7\out/private.rs
+
+C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs:
+C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs:
+C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs:
+C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs:
+C:\Users\wibow\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs:
+C:\Users\wibow\Collaboration\ Notes\apps\backend\target\release\build\serde-2d7e6a30e1c23da7\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\wibow\\Collaboration Notes\\apps\\backend\\target\\release\\build\\serde-2d7e6a30e1c23da7\\out
