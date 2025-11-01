@@ -35,3 +35,5 @@ lettre = { version = "0.11", features = ["tokio1-native-tls", "builder", "smtp-t
 
 # Force older version of base64ct to avoid edition2024 requirement
 base64ct = "=1.6.0"
+# Pin transitive dependency `home` to avoid edition2024-only 0.5.12
+home = "=0.5.11"

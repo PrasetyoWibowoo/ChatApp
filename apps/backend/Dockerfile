@@ -1,15 +1,17 @@
-FROM rust:1.75 as builder
+FROM rust:1.84 as builder
 
 WORKDIR /app
 
-# Copy manifests
+# Copy manifests and lockfile
 COPY Cargo.toml ./
+COPY Cargo.lock ./Cargo.lock
 
 # Copy source code
 COPY src ./src
 COPY migrations ./migrations
 
-# Build release
+# Print toolchain versions and build release with pinned lockfile
+RUN rustc --version && cargo --version
 RUN cargo build --release
 
 # Runtime stage
