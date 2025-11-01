@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly as builder
+FROM rust:1.75 as builder
 
 WORKDIR /app
 
@@ -9,8 +9,8 @@ COPY Cargo.toml ./
 COPY src ./src
 COPY migrations ./migrations
 
-# Build release with nightly
-RUN cargo +nightly build --release
+# Build release
+RUN cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
