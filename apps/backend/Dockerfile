@@ -1,9 +1,6 @@
-FROM rust:latest as builder
+FROM rustlang/rust:nightly as builder
 
 WORKDIR /app
-
-# Update rustup and use nightly for edition2024 support
-RUN rustup default nightly
 
 # Copy manifests
 COPY Cargo.toml ./
@@ -12,8 +9,8 @@ COPY Cargo.toml ./
 COPY src ./src
 COPY migrations ./migrations
 
-# Build release
-RUN cargo build --release
+# Build release with nightly
+RUN cargo +nightly build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
