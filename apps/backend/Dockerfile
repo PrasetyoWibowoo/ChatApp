@@ -1,6 +1,9 @@
-FROM rust:1.82 as builder
+FROM rust:latest as builder
 
 WORKDIR /app
+
+# Update rustup and use nightly for edition2024 support
+RUN rustup default nightly
 
 # Copy manifests
 COPY Cargo.toml ./
