@@ -64,6 +64,7 @@ export default function Chat() {
   const [editInput, setEditInput] = createSignal('');
   // Reaction picker state
   const [showReactionPicker, setShowReactionPicker] = createSignal<string | null>(null);
+  const [reactionPickerPos, setReactionPickerPos] = createSignal<{x: number, y: number} | null>(null);
   // Context menu state
   const [contextMenu, setContextMenu] = createSignal<{x: number, y: number, message: Message} | null>(null);
   const [longPressTimer, setLongPressTimer] = createSignal<number | null>(null);
@@ -1296,6 +1297,7 @@ export default function Chat() {
                     class="context-menu-item"
                     onClick={() => {
                       setShowReactionPicker(msg.id);
+                      setReactionPickerPos({ x: menu().x, y: menu().y });
                       closeContextMenu();
                     }}
                     style={{
@@ -1377,51 +1379,73 @@ export default function Chat() {
                     </button>
                   </Show>
                 </div>
+              </>
+            );
+          }}
+        </Show>
 
-                {/* Reaction Picker */}
-                <Show when={showReactionPicker() === msg.id}>
-                  <div 
-                    class="reaction-picker"
-                    style={{
-                      position: 'fixed',
-                      top: `${menu().y + 40}px`,
-                      left: `${menu().x}px`,
-                      background: '#161b22',
-                      border: '1px solid #30363d',
-                      'border-radius': '8px',
-                      padding: '8px',
-                      display: 'flex',
-                      gap: '4px',
-                      'box-shadow': '0 8px 24px rgba(0,0,0,0.5)',
-                      'z-index': 1002,
-                    }}
-                  >
-                    <For each={['👍', '❤️', '😂', '😮', '😢', '🎉']}>
-                      {(emoji) => (
-                        <button
-                          onClick={() => {
-                            addReaction(msg.id, emoji);
-                            setShowReactionPicker(null);
-                            closeContextMenu();
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            'font-size': '24px',
-                            cursor: 'pointer',
-                            padding: '4px',
-                            'border-radius': '4px',
-                            transition: 'background 0.2s',
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                        >
-                          {emoji}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
+        {/* Reaction Picker - Outside context menu scope */}
+        <Show when={showReactionPicker() && reactionPickerPos()}>
+          {(messageId) => {
+            const pos = reactionPickerPos()!;
+            return (
+              <>
+                <div 
+                  class="reaction-picker-overlay"
+                  onClick={() => {
+                    setShowReactionPicker(null);
+                    setReactionPickerPos(null);
+                  }}
+                  style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    'z-index': 1002,
+                  }}
+                />
+                <div 
+                  class="reaction-picker"
+                  style={{
+                    position: 'fixed',
+                    top: `${pos.y + 40}px`,
+                    left: `${pos.x}px`,
+                    background: '#161b22',
+                    border: '1px solid #30363d',
+                    'border-radius': '8px',
+                    padding: '8px',
+                    display: 'flex',
+                    gap: '4px',
+                    'box-shadow': '0 8px 24px rgba(0,0,0,0.5)',
+                    'z-index': 1003,
+                  }}
+                >
+                  <For each={['👍', '❤️', '😂', '😮', '😢', '🎉']}>
+                    {(emoji) => (
+                      <button
+                        onClick={() => {
+                          addReaction(messageId(), emoji);
+                          setShowReactionPicker(null);
+                          setReactionPickerPos(null);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          'font-size': '24px',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          'border-radius': '4px',
+                          transition: 'background 0.2s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                      >
+                        {emoji}
+                      </button>
+                    )}
+                  </For>
+                </div>
               </>
             );
           }}
