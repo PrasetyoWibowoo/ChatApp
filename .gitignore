@@ -4,13 +4,25 @@ dist/
 .vite/
 
 # Rust
+target/
 /target
+**/target/
 **/*.rs.bk
+Cargo.lock
 
 # Env
 .env
 .env.*
+!.env.example
 
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Railway
+.railway/
