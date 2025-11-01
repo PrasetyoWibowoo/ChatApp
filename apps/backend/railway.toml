@@ -1,8 +1,9 @@
 [build]
-builder = "DOCKERFILE"
+builder = "dockerfile"
 dockerfilePath = "Dockerfile"
+watchPatterns = ["apps/backend/**"]
 
 [deploy]
 startCommand = "./backend"
-restartPolicyType = "ON_FAILURE"
+restartPolicyType = "always"
 restartPolicyMaxRetries = 10
