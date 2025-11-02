@@ -18,12 +18,16 @@ use sqlx::PgPool;
 use ws::WsState;
 
 #[get("/health")]
-async fn health() -> HttpResponse { HttpResponse::Ok().finish() }
+async fn health() -> HttpResponse { 
+    HttpResponse::Ok().body("OK") 
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    
+    log::info!("ChatApp Backend v1.0.0 starting...");
 
     let cfg = Config::from_env();
 
