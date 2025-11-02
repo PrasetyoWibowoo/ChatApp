@@ -98,6 +98,14 @@ npm run dev
   - `[YjsWsProvider] connected`
   - `[YjsWsProvider] received snapshot`
   
+## Docker notes
+
+- The backend Dockerfile lives at the repository root (`Dockerfile`). This is intentional to support monorepo hosts.
+- Railway is configured to reference that root Dockerfile (see `apps/backend/railway.toml` with `dockerfilePath = "../Dockerfile"`).
+- An additional Dockerfile also exists in `apps/backend/` for local builds if you prefer building from the service folder.
+
+Optional: You can run the backend in Docker to avoid local toolchain/linker issues on Windows. Use the root-level Dockerfile and ensure your `DATABASE_URL` points to the Postgres container (e.g., `postgres://postgres:password@localhost:5433/realtime_notes` for local compose).
+  
 5) Test realtime features (open same doc in 2 tabs)
 - Type in Tab A → Tab B should show:
   - "typing…" indicator in the top bar

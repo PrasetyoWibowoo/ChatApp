@@ -26,10 +26,32 @@ async fn main() -> std::io::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let cfg = Config::from_env();
+
+    // Helpful log for database target (credentials redacted)
+    let redacted_db_url = {
+        let url = &cfg.database_url;
+        match (url.find("://"), url.find('@')) {
+            (Some(s_idx), Some(a_idx)) if a_idx > s_idx + 3 => {
+                let mut redacted = url.to_string();
+                redacted.replace_range(s_idx + 3..a_idx, "****:****");
+                redacted
+            }
+            _ => url.clone(),
+        }
+    };
+    log::info!("connecting to database at {}", redacted_db_url);
+
     let pool: PgPool = db::init_pool_with_retry(&cfg.database_url, 20, 500)
         .await
-        .expect("DB connect");
-    db::run_migrations(&pool).await.expect("migrations");
+        .map_err(|e| {
+            log::error!("database connection failed: {}", e);
+            std::io::Error::new(std::io::ErrorKind::Other, format!("DB connect: {}", e))
+        })?;
+
+    db::run_migrations(&pool).await.map_err(|e| {
+        log::error!("database migrations failed: {}", e);
+        std::io::Error::new(std::io::ErrorKind::Other, format!("migrations: {}", e))
+    })?;
 
     let ws_state = web::Data::new(WsState::new());
 
