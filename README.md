@@ -234,3 +234,4 @@ This project is open source and available under the MIT License.
 ## Notes
 - This is a production-ready foundation with rate limiting, email verification, and security best practices
 - Further hardening (enhanced monitoring, load balancing, CDN) can be added for larger scale
+- CORS configured for Vercel production domain
