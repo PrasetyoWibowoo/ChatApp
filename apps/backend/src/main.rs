@@ -71,19 +71,15 @@ async fn main() -> std::io::Result<()> {
     log::info!("starting chat server on {}", &cfg.bind_addr);
 
     HttpServer::new(move || {
-        // Configure CORS with allowed_origin_fn for maximum compatibility
-        // This bypasses Railway's CORS proxy override
+        // Configure CORS to work with Railway's proxy
+        // Railway environment should have RAILWAY_CORS_DISABLED=true set
         let cors = Cors::default()
-            .allowed_origin_fn(|origin, _req_head| {
-                let origin_str = origin.to_str().unwrap_or("");
-                // Allow Vercel production and preview URLs
-                origin_str.contains("vercel.app") ||
-                origin_str.contains("localhost") ||
-                origin_str == "http://localhost:5173" ||
-                origin_str == "http://localhost:3000"
-            })
+            .allowed_origin("https://chat-app-sigma-topaz-55.vercel.app")
+            .allowed_origin("http://localhost:5173")
+            .allowed_origin("http://localhost:3000")
             .allow_any_method()
             .allow_any_header()
+            .supports_credentials()
             .max_age(3600);
         
         App::new()
@@ -91,6 +87,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(ws_state.clone())
             .app_data(web::Data::new(keys.clone()))
             .app_data(email_service.clone())
+            .wrap(actix_web::middleware::Logger::default())
             .wrap(cors)
             .service(health)
             .service(auth::signup)
