@@ -69,6 +69,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         // Configure CORS - allow specific origins or fallback to permissive
         let mut cors = Cors::default()
+            .allowed_origin("https://chat-app-sigma-topaz-55.vercel.app")
             .allowed_origin("https://chat-xjj90iiv-prasetyowibowoos-projects.vercel.app")
             .allowed_origin("https://chat-47jgmabwj-prasetyowibowoos-projects.vercel.app")
             .allowed_origin("https://chat-em4qy94c-prasetyowibowoos-projects.vercel.app")
