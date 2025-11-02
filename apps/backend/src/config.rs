@@ -25,12 +25,22 @@ impl Config {
             "localhost"
         };
 
-        let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+        let mut database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
             format!(
                 "postgres://postgres:password@{}:5433/realtime_notes",
                 default_db_host
             )
         });
+
+        // If inside a container and DATABASE_URL points at localhost/127.0.0.1,
+        // rewrite host to host.docker.internal to reach services on the host.
+        if default_db_host == "host.docker.internal" {
+            if database_url.contains("@localhost:") {
+                database_url = database_url.replace("@localhost:", "@host.docker.internal:");
+            } else if database_url.contains("@127.0.0.1:") {
+                database_url = database_url.replace("@127.0.0.1:", "@host.docker.internal:");
+            }
+        }
 
         // Basic sanity check to help diagnose common mistakes early
         if !(database_url.starts_with("postgres://") || database_url.starts_with("postgresql://")) {
