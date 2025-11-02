@@ -67,7 +67,14 @@ async fn main() -> std::io::Result<()> {
     log::info!("starting chat server on {}", &cfg.bind_addr);
 
     HttpServer::new(move || {
-        let cors = Cors::permissive();
+        // Explicitly permissive CORS for all origins
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header()
+            .supports_credentials()
+            .max_age(3600);
+        
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .app_data(ws_state.clone())
