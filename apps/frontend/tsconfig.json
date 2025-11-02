@@ -6,7 +6,6 @@
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
     "strict": true,
-    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {},
     "types": ["vite/client"],
