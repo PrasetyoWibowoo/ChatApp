@@ -26,18 +26,17 @@ A full-stack, open-source realtime chat application with modern WhatsApp-style U
 - **Modern CSS** - Custom design system with dark theme
 
 ### Backend
-- **Rust** + Actix Web - High-performance async web framework
-- **WebSocket** - Real-time bidirectional communication
-- **SQLx** - Compile-time checked SQL queries
-- **Lettre** - Email service for verification codes
-
-### Database
-- **PostgreSQL** - Relational database for messages, users, and metadata
+- **Appwrite** - Backend as a Service (BaaS)
+  - Built-in Authentication (Email/Password, OAuth)
+  - Real-time Database with WebSocket subscriptions
+  - File Storage for avatars and images
+  - Email verification
+  - 100% Free - No credit card required
 
 ### Deployment
 - **Frontend**: Vercel (free, unlimited deployments)
-- **Backend**: Railway (free, 500 hours/month)
-- **Database**: Railway PostgreSQL (free, included)
+- **Backend**: Appwrite Cloud (free, no credit card needed)
+- **Database**: Appwrite Database (free, included)
 
 ## Architecture
 
@@ -199,11 +198,14 @@ Get free credits for Railway, DigitalOcean, and more:
 | Component | Platform | Status |
 |-----------|----------|--------|
 | Frontend | Vercel | ✅ Free Forever |
-| Backend | Railway | ✅ Free (500 hrs/mo) |
-| Database | Railway PostgreSQL | ✅ Free (Included) |
-| Domain | Vercel/Railway | ✅ Free Subdomain |
+| Backend | Appwrite Cloud | ✅ Free Forever |
+| Database | Appwrite Database | ✅ Free (Included) |
+| Auth & Storage | Appwrite | ✅ Free (Included) |
+| Domain | Vercel | ✅ Free Subdomain |
 
 **Total Cost**: **$0/month** 🎉
+
+**No Credit Card Required!** ✨
 
 ## 🔗 Live Demo
 
