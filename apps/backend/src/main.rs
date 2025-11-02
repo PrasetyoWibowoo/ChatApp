@@ -67,13 +67,21 @@ async fn main() -> std::io::Result<()> {
     log::info!("starting chat server on {}", &cfg.bind_addr);
 
     HttpServer::new(move || {
-        // Explicitly permissive CORS for all origins
-        // Note: allow_any_origin() is incompatible with supports_credentials()
-        let cors = Cors::default()
-            .allow_any_origin()
+        // Configure CORS - allow specific origins or fallback to permissive
+        let mut cors = Cors::default()
+            .allowed_origin("https://chat-xjj90iiv-prasetyowibowoos-projects.vercel.app")
+            .allowed_origin("https://chat-47jgmabwj-prasetyowibowoos-projects.vercel.app")
+            .allowed_origin("https://chat-em4qy94c-prasetyowibowoos-projects.vercel.app")
+            .allowed_origin("http://localhost:5173")
+            .allowed_origin("http://localhost:3000")
             .allow_any_method()
             .allow_any_header()
             .max_age(3600);
+        
+        // Add custom domain if FRONTEND_URL is set
+        if let Ok(frontend_url) = std::env::var("FRONTEND_URL") {
+            cors = cors.allowed_origin(&frontend_url);
+        }
         
         App::new()
             .app_data(web::Data::new(pool.clone()))
