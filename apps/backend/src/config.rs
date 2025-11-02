@@ -13,7 +13,12 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Self {
         dotenv().ok();
-        let bind_addr = env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+        // Railway and most cloud providers set PORT env var
+        let bind_addr = if let Ok(port) = env::var("PORT") {
+            format!("0.0.0.0:{}", port)
+        } else {
+            env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string())
+        };
         // Default matches docker-compose.yml (port 5433, password "password", db "realtime_notes").
         // When running inside a container, "localhost" would refer to the container itself.
         // Prefer host.docker.internal to reach the host's forwarded port.
@@ -65,16 +70,6 @@ impl Config {
                 }
             }
         };
-
-        // If inside a container and DATABASE_URL points at localhost/127.0.0.1,
-        // rewrite host to host.docker.internal to reach services on the host.
-        if default_db_host == "host.docker.internal" {
-            if database_url.contains("@localhost:") {
-                database_url = database_url.replace("@localhost:", "@host.docker.internal:");
-            } else if database_url.contains("@127.0.0.1:") {
-                database_url = database_url.replace("@127.0.0.1:", "@host.docker.internal:");
-            }
-        }
 
         // If inside a container and DATABASE_URL points at localhost/127.0.0.1,
         // rewrite host to host.docker.internal to reach services on the host.
