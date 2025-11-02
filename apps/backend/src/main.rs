@@ -71,22 +71,20 @@ async fn main() -> std::io::Result<()> {
     log::info!("starting chat server on {}", &cfg.bind_addr);
 
     HttpServer::new(move || {
-        // Configure CORS - allow specific origins or fallback to permissive
-        let mut cors = Cors::default()
-            .allowed_origin("https://chat-app-sigma-topaz-55.vercel.app")
-            .allowed_origin("https://chat-xjj90iiv-prasetyowibowoos-projects.vercel.app")
-            .allowed_origin("https://chat-47jgmabwj-prasetyowibowoos-projects.vercel.app")
-            .allowed_origin("https://chat-em4qy94c-prasetyowibowoos-projects.vercel.app")
-            .allowed_origin("http://localhost:5173")
-            .allowed_origin("http://localhost:3000")
+        // Configure CORS with allowed_origin_fn for maximum compatibility
+        // This bypasses Railway's CORS proxy override
+        let cors = Cors::default()
+            .allowed_origin_fn(|origin, _req_head| {
+                let origin_str = origin.to_str().unwrap_or("");
+                // Allow Vercel production and preview URLs
+                origin_str.contains("vercel.app") ||
+                origin_str.contains("localhost") ||
+                origin_str == "http://localhost:5173" ||
+                origin_str == "http://localhost:3000"
+            })
             .allow_any_method()
             .allow_any_header()
             .max_age(3600);
-        
-        // Add custom domain if FRONTEND_URL is set
-        if let Ok(frontend_url) = std::env::var("FRONTEND_URL") {
-            cors = cors.allowed_origin(&frontend_url);
-        }
         
         App::new()
             .app_data(web::Data::new(pool.clone()))
