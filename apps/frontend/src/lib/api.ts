@@ -5,7 +5,12 @@ import axios from 'axios';
 const getApiBaseUrl = () => {
   // If explicitly set, use it
   if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+    let url = import.meta.env.VITE_API_URL;
+    // Add https:// if missing protocol
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = `https://${url}`;
+    }
+    return url;
   }
   
   // Use the same hostname as frontend but port 8080
