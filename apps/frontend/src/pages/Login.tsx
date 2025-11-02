@@ -5,10 +5,16 @@ export default function Login() {
   const [email, setEmail] = createSignal('');
   const [password, setPassword] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
+  const [loading, setLoading] = createSignal(false);
 
   const submit = async (e: Event) => {
     e.preventDefault();
+    
+    // Prevent double-submit
+    if (loading()) return;
+    
     setError(null);
+    setLoading(true);
     try {
       const res = await api.post('/api/auth/login', { email: email(), password: password() });
       localStorage.setItem('token', res.data.token);
@@ -21,6 +27,7 @@ export default function Login() {
       window.location.replace('/');
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Login failed');
+      setLoading(false);
     }
   };
 
@@ -41,7 +48,9 @@ export default function Login() {
           {error() && <p class="muted" style={{ color: 'var(--danger)' }}>{error()}</p>}
           <div class="row" style={{ 'justify-content': 'space-between', 'margin-top': '4px' }}>
             <a class="muted" href="/signup">Create account</a>
-            <button class="btn btn-primary" type="submit">Login</button>
+            <button class="btn btn-primary" type="submit" disabled={loading()}>
+              {loading() ? 'Logging in...' : 'Login'}
+            </button>
           </div>
         </form>
       </div>

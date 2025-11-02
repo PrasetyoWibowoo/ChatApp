@@ -10,6 +10,10 @@ export default function Signup() {
 
   const submit = async (e: Event) => {
     e.preventDefault();
+    
+    // Prevent double-submit
+    if (loading()) return;
+    
     setError(null);
     setLoading(true);
     
