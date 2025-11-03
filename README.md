@@ -31,11 +31,13 @@ A full-stack, open-source realtime chat application with modern WhatsApp-style U
 - **WebSockets** - Realtime bidirectional communication
 - **JWT** - Secure authentication
 - **sqlx** - Compile-time checked SQL queries
+- **Resend** - HTTP-based email service (Railway blocks SMTP ports)
 
 ### Deployment
 - **Frontend**: Vercel (free, unlimited deployments)
-- **Backend**: Railway (free tier with CORS workarounds)
+- **Backend**: Railway (free tier)
 - **Database**: Railway PostgreSQL (free tier)
+- **Email**: Resend (free 100 emails/day)
 
 ## Architecture
 
@@ -171,11 +173,24 @@ See `.env.example`. Key ones:
 
 ## 🚀 Deployment
 
+### Resend (Email Service)
+**Required:** Railway blocks SMTP ports, so we use Resend HTTP API
+
+1. Sign up at https://resend.com (free 100 emails/day)
+2. Add domain or use default `onboarding@resend.dev`
+3. Create API key
+4. Copy key for Railway env vars
+
 ### Railway (Backend + Database)
 1. Sign up at https://railway.app with GitHub
 2. Create new project from GitHub repo
 3. Add PostgreSQL database
-4. Configure environment variables
+4. Configure environment variables:
+   - `RESEND_API_KEY` - Your Resend API key (from step above)
+   - `SMTP_FROM_EMAIL` - Email sender (or `onboarding@resend.dev` for testing)
+   - `JWT_SECRET` - Random secret string
+   - `DATABASE_URL` - Auto-filled by Railway
+   - `RAILWAY_CORS_DISABLED` - Set to `true`
 5. Deploy!
 
 ### Vercel (Frontend)
@@ -196,13 +211,17 @@ See `.env.example`. Key ones:
 | Component | Platform | Status |
 |-----------|----------|--------|
 | Frontend | Vercel | ✅ Free Forever |
-| Backend | Railway | ⚠️ Free (CORS limitations) |
+| Backend | Railway | ✅ Free |
 | Database | Railway PostgreSQL | ✅ Free |
+| Email | Resend | ✅ Free (100/day) |
 | Domain | Vercel | ✅ Free Subdomain |
 
 **Total Cost**: **$0/month** 🎉
 
-**Known Issue**: Railway free tier has CORS proxy that overrides backend headers. Workaround: Use `RAILWAY_CORS_DISABLED=true` environment variable.
+**Important Notes**: 
+- Railway blocks SMTP ports (587/465) on free tier
+- Solution: Use Resend HTTP API instead
+- Set `RESEND_API_KEY` in Railway environment variables
 
 ## 🤝 Contributing
 
@@ -216,10 +235,10 @@ This project is open source and available under the MIT License.
 
 - Built with Rust, SolidJS, and PostgreSQL
 - Deployed on Railway and Vercel (free tiers)
-- Email service powered by Gmail SMTP
+- Email service powered by Resend API
 
 ## Notes
 - This is a production-ready foundation with rate limiting, email verification, and security best practices
-- Railway free tier CORS limitations: Backend headers overridden by Railway proxy
-- Workaround applied: Using specific allowed origins with credentials support
-- For production, consider paid tier or alternative platforms (Render, Fly.io) for proper CORS
+- Railway blocks outbound SMTP connections on free tier (use Resend HTTP API)
+- CORS fixed by using Railway public URL format: `chatapp-0.up.railway.app` (with dot)
+- For production with higher email limits, upgrade Resend or use SendGrid/Mailgun

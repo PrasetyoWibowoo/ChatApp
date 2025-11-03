@@ -31,7 +31,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
 urlencoding = "2"
 actix = "0.13"
-lettre = { version = "0.11", features = ["tokio1-native-tls", "builder", "smtp-transport"] }
+reqwest = { version = "0.11", features = ["json"] }
 
 # Force older version of base64ct to avoid edition2024 requirement
 base64ct = "=1.6.0"
