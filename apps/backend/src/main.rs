@@ -10,9 +10,11 @@ mod ratelimit;
 mod validation;
 
 use actix_cors::Cors;
-use actix_web::{get, web, App, HttpResponse, HttpServer};
+use actix_web::{get, web, App, HttpResponse, HttpServer, dev::Service as _, dev::ServiceRequest, dev::ServiceResponse, Error};
+use actix_web::http::header;
 use config::Config;
 use env_logger::Env;
+use futures_util::future::FutureExt;
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use sqlx::PgPool;
 use ws::WsState;
@@ -71,16 +73,8 @@ async fn main() -> std::io::Result<()> {
     log::info!("starting chat server on {}", &cfg.bind_addr);
 
     HttpServer::new(move || {
-        // Configure CORS to work with Railway's proxy
-        // Railway environment should have RAILWAY_CORS_DISABLED=true set
-        let cors = Cors::default()
-            .allowed_origin("https://chat-app-sigma-topaz-55.vercel.app")
-            .allowed_origin("http://localhost:5173")
-            .allowed_origin("http://localhost:3000")
-            .allow_any_method()
-            .allow_any_header()
-            .supports_credentials()
-            .max_age(3600);
+        // Use permissive CORS to bypass Railway proxy limitations
+        let cors = Cors::permissive();
         
         App::new()
             .app_data(web::Data::new(pool.clone()))
@@ -89,6 +83,38 @@ async fn main() -> std::io::Result<()> {
             .app_data(email_service.clone())
             .wrap(actix_web::middleware::Logger::default())
             .wrap(cors)
+            // Custom middleware to force CORS headers after Railway proxy
+            .wrap_fn(|req, srv| {
+                let origin = req.headers()
+                    .get(header::ORIGIN)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+                
+                srv.call(req).map(move |res| {
+                    res.map(|mut response| {
+                        if let Some(origin_value) = origin {
+                            // Force set CORS headers to override Railway proxy
+                            response.headers_mut().insert(
+                                header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                                origin_value.parse().unwrap(),
+                            );
+                            response.headers_mut().insert(
+                                header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
+                                "true".parse().unwrap(),
+                            );
+                            response.headers_mut().insert(
+                                header::ACCESS_CONTROL_ALLOW_METHODS,
+                                "GET,POST,PUT,DELETE,OPTIONS,PATCH".parse().unwrap(),
+                            );
+                            response.headers_mut().insert(
+                                header::ACCESS_CONTROL_ALLOW_HEADERS,
+                                "*".parse().unwrap(),
+                            );
+                        }
+                        response
+                    })
+                })
+            })
             .service(health)
             .service(auth::signup)
             .service(auth::login)
