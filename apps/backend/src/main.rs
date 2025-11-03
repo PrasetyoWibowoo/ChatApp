@@ -67,18 +67,7 @@ async fn main() -> std::io::Result<()> {
     };
 
     let email_service = web::Data::new(
-        match email::EmailService::new() {
-            Ok(service) => {
-                log::info!("✅ Email service initialized successfully");
-                service
-            }
-            Err(e) => {
-                log::error!("❌ Failed to initialize email service: {}", e);
-                log::error!("⚠️  Email verification will not work!");
-                log::error!("💡 Set RESEND_API_KEY environment variable to enable email");
-                panic!("Email service required. Get free API key from https://resend.com");
-            }
-        }
+        email::EmailService::new().expect("Failed to initialize email service")
     );
 
     log::info!("starting chat server on {}", &cfg.bind_addr);

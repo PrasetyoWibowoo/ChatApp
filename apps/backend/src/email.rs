@@ -13,8 +13,10 @@ impl EmailService {
     pub fn new() -> Result<Self> {
         let resend_api_key = std::env::var("RESEND_API_KEY")
             .context("RESEND_API_KEY must be set (get free key from resend.com)")?;
+        
+        // Use registered email for free tier (can only send to same email without domain verification)
         let from_email = std::env::var("SMTP_FROM_EMAIL")
-            .unwrap_or_else(|_| "onboarding@resend.dev".to_string());
+            .unwrap_or_else(|_| "wibowoprasetyo40@gmail.com".to_string());
 
         log::info!("Initializing EmailService with Resend API");
         log::info!("From email: {}", from_email);
