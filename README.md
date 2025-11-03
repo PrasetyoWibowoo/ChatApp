@@ -188,7 +188,7 @@ See `.env.example`. Key ones:
 **Note**: Railway free tier has CORS proxy limitations. See deployment docs for workarounds.
 
 **Current Live Deployment:**
-- Backend: https://chatapp-0-up.railway.app
+- Backend: https://chatapp-0.up.railway.app
 - Frontend: https://chat-app-sigma-topaz-55.vercel.app
 
 ## 📦 Deployment Stack (FREE)
