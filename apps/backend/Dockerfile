@@ -2,13 +2,13 @@ FROM rust:1.84 as builder
 
 WORKDIR /app
 
-# Copy manifests and lockfile
-COPY Cargo.toml ./
-COPY Cargo.lock ./Cargo.lock
+# Copy manifests from backend directory
+COPY apps/backend/Cargo.toml ./
+COPY apps/backend/Cargo.lock ./Cargo.lock
 
-# Copy source code
-COPY src ./src
-COPY migrations ./migrations
+# Copy source code from backend directory
+COPY apps/backend/src ./src
+COPY apps/backend/migrations ./migrations
 
 # Print toolchain versions and build release with pinned lockfile
 RUN rustc --version && cargo --version

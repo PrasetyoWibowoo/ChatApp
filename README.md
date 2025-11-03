@@ -26,17 +26,16 @@ A full-stack, open-source realtime chat application with modern WhatsApp-style U
 - **Modern CSS** - Custom design system with dark theme
 
 ### Backend
-- **Appwrite** - Backend as a Service (BaaS)
-  - Built-in Authentication (Email/Password, OAuth)
-  - Real-time Database with WebSocket subscriptions
-  - File Storage for avatars and images
-  - Email verification
-  - 100% Free - No credit card required
+- **Rust** + **Actix-web** - High-performance async web framework
+- **PostgreSQL** - Relational database for messages & users
+- **WebSockets** - Realtime bidirectional communication
+- **JWT** - Secure authentication
+- **sqlx** - Compile-time checked SQL queries
 
 ### Deployment
 - **Frontend**: Vercel (free, unlimited deployments)
-- **Backend**: Appwrite Cloud (free, no credit card needed)
-- **Database**: Appwrite Database (free, included)
+- **Backend**: Railway (free tier with CORS workarounds)
+- **Database**: Railway PostgreSQL (free tier)
 
 ## Architecture
 
@@ -172,52 +171,38 @@ See `.env.example`. Key ones:
 
 ## 🚀 Deployment
 
-### Quick Deploy (15 minutes)
-See **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** for step-by-step guide.
+### Railway (Backend + Database)
+1. Sign up at https://railway.app with GitHub
+2. Create new project from GitHub repo
+3. Add PostgreSQL database
+4. Configure environment variables
+5. Deploy!
 
-### Full Documentation
-See **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** for complete deployment documentation including:
-- GitHub setup
-- Railway (Backend + Database)
-- Vercel (Frontend)
-- Environment variables
-- CORS configuration
-- Troubleshooting
-- Free alternatives
+### Vercel (Frontend)
+1. Import GitHub repo at https://vercel.com
+2. Set Root Directory: `apps/frontend`
+3. Framework: Vite
+4. Add `VITE_API_URL` environment variable
+5. Deploy!
 
-### Pre-Deployment Checklist
-See **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** to ensure everything is ready.
+**Note**: Railway free tier has CORS proxy limitations. See deployment docs for workarounds.
 
-### 🎓 GitHub Education Pack (Optional)
-Get free credits for Railway, DigitalOcean, and more:
-- https://education.github.com/pack
-- No credit card required!
+**Current Live Deployment:**
+- Backend: https://chatapp-0-up.railway.app
+- Frontend: https://chat-app-sigma-topaz-55.vercel.app
 
-## 📦 Deployment Stack (100% FREE)
+## 📦 Deployment Stack (FREE)
 
 | Component | Platform | Status |
 |-----------|----------|--------|
 | Frontend | Vercel | ✅ Free Forever |
-| Backend | Appwrite Cloud | ✅ Free Forever |
-| Database | Appwrite Database | ✅ Free (Included) |
-| Auth & Storage | Appwrite | ✅ Free (Included) |
+| Backend | Railway | ⚠️ Free (CORS limitations) |
+| Database | Railway PostgreSQL | ✅ Free |
 | Domain | Vercel | ✅ Free Subdomain |
 
 **Total Cost**: **$0/month** 🎉
 
-**No Credit Card Required!** ✨
-
-## 🔗 Live Demo
-
-*Coming soon after deployment...*
-
-## 📚 Documentation
-
-- **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** - Deploy in 15 minutes
-- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Complete deployment guide
-- **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** - Pre-deployment checklist
-- **[EMAIL_VERIFICATION_SETUP.md](EMAIL_VERIFICATION_SETUP.md)** - Email verification setup
-- **[PRODUCTION_FEATURES.md](PRODUCTION_FEATURES.md)** - Production features guide
+**Known Issue**: Railway free tier has CORS proxy that overrides backend headers. Workaround: Use `RAILWAY_CORS_DISABLED=true` environment variable.
 
 ## 🤝 Contributing
 
@@ -235,5 +220,6 @@ This project is open source and available under the MIT License.
 
 ## Notes
 - This is a production-ready foundation with rate limiting, email verification, and security best practices
-- Further hardening (enhanced monitoring, load balancing, CDN) can be added for larger scale
-- CORS configured for Vercel production domain
+- Railway free tier CORS limitations: Backend headers overridden by Railway proxy
+- Workaround applied: Using specific allowed origins with credentials support
+- For production, consider paid tier or alternative platforms (Render, Fly.io) for proper CORS
