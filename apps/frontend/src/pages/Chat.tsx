@@ -1,6 +1,7 @@
 import { onCleanup, onMount, createSignal, createMemo, For, Show } from 'solid-js';
 import EmojiPicker from '../components/EmojiPicker';
 import { SmileIcon, ImageIcon, SendIcon, LinkIcon, CheckIcon, CheckDoubleIcon, ReplyIcon, TrashIcon, SearchIcon, EditIcon } from '../components/Icons';
+import { getDisplayName, getInitials } from '../lib/displayName';
 
 function getApiBaseUrl() {
   const hostname = window.location.hostname;
@@ -987,10 +988,10 @@ export default function Chat() {
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'rgba(255, 166, 87, 0.2)';
                   }}
-                  title={`From: ${pinnedMsg.sender_email}\nID: ${pinnedMsg.id.substring(0, 8)}`}
+                  title={`From: ${getDisplayName(pinnedMsg.sender_email)}\nID: ${pinnedMsg.id.substring(0, 8)}`}
                 >
                   <div style={{ 'font-size': '10px', opacity: 0.8 }}>
-                    {pinnedMsg.sender_email.split('@')[0]} • {new Date(pinnedMsg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    {getDisplayName(pinnedMsg.sender_email)} • {new Date(pinnedMsg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                   <div>
                     {pinnedMsg.content.substring(0, 30)}{pinnedMsg.content.length > 30 ? '...' : ''}
@@ -1005,7 +1006,7 @@ export default function Chat() {
           <For each={messages()} fallback={<div>Loading...</div>}>
             {(msg) => {
               const isMe = msg.sender_id === myUserId;
-              const initials = msg.sender_email.substring(0, 2).toUpperCase();
+              const initials = getInitials(msg.sender_email);
               
               return (
                 <div 
@@ -1048,11 +1049,11 @@ export default function Chat() {
                         </span>
                       </div>
                     )}
-                    {!isMe && <div class="sender-name">{msg.sender_email}</div>}
+                    {!isMe && <div class="sender-name">{getDisplayName(msg.sender_email)}</div>}
                     
                     {msg.reply_to_content && (
                       <div class="reply-preview">
-                        <div class="reply-preview-sender">{msg.reply_to_sender}</div>
+                        <div class="reply-preview-sender">{msg.reply_to_sender ? getDisplayName(msg.reply_to_sender) : 'Unknown'}</div>
                         <div class="reply-preview-content">{msg.reply_to_content.substring(0, 50)}{msg.reply_to_content.length > 50 ? '...' : ''}</div>
                       </div>
                     )}
@@ -1158,7 +1159,7 @@ export default function Chat() {
             <div class="reply-bar-content">
               <div class="reply-bar-icon"><ReplyIcon /></div>
               <div>
-                <div class="reply-bar-sender">{replyingTo()?.sender_email}</div>
+                <div class="reply-bar-sender">{replyingTo()?.sender_email ? getDisplayName(replyingTo()!.sender_email) : 'Unknown'}</div>
                 <div class="reply-bar-text">{replyingTo()?.content?.substring(0, 50)}{(replyingTo()?.content?.length || 0) > 50 ? '...' : ''}</div>
               </div>
             </div>
@@ -1564,7 +1565,7 @@ export default function Chat() {
                     class="search-result-item"
                     onClick={() => scrollToMessage(msg.id)}
                   >
-                    <div class="search-result-sender">{msg.sender_email}</div>
+                    <div class="search-result-sender">{getDisplayName(msg.sender_email)}</div>
                     <div class="search-result-content">{msg.content}</div>
                     <div class="search-result-time">{formatTime(msg.created_at)}</div>
                   </div>

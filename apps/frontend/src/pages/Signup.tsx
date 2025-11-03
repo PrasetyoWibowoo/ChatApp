@@ -26,10 +26,12 @@ export default function Signup() {
         password: password() 
       });
       
-      // Store token
+      // Store token and username
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
       }
+      localStorage.setItem('username', username());
+      localStorage.setItem('email', email());
       
       // Send verification code
       await sendVerificationCode(email());
