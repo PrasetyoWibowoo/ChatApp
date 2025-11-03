@@ -1,0 +1,9 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["apps/backend/**"]
+
+[deploy]
+startCommand = "./backend"
+restartPolicyType = "always"
+restartPolicyMaxRetries = 10

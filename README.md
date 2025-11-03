@@ -26,16 +26,17 @@ A full-stack, open-source realtime chat application with modern WhatsApp-style U
 - **Modern CSS** - Custom design system with dark theme
 
 ### Backend
-- **Rust** + **Actix-web** - High-performance async web framework
-- **PostgreSQL** - Relational database for messages & users
-- **WebSockets** - Realtime bidirectional communication
-- **JWT** - Secure authentication
-- **sqlx** - Compile-time checked SQL queries
+- **Appwrite** - Backend as a Service (BaaS)
+  - Built-in Authentication (Email/Password, OAuth)
+  - Real-time Database with WebSocket subscriptions
+  - File Storage for avatars and images
+  - Email verification
+  - 100% Free - No credit card required
 
 ### Deployment
 - **Frontend**: Vercel (free, unlimited deployments)
-- **Backend**: Render.com (free tier, proper CORS support)
-- **Database**: Render PostgreSQL (free tier)
+- **Backend**: Appwrite Cloud (free, no credit card needed)
+- **Database**: Appwrite Database (free, included)
 
 ## Architecture
 
@@ -98,10 +99,11 @@ npm run dev
   
 ## Docker notes
 
-- The backend Dockerfile is located at `apps/backend/Dockerfile` for Render.com deployment.
-- Render automatically detects and uses this Dockerfile when Environment is set to "Docker".
-- For local development, you can also run the backend in Docker to avoid Rust toolchain/linker issues on Windows.
-- Ensure your `DATABASE_URL` points to the Postgres container (e.g., `postgres://postgres:password@localhost:5433/realtime_notes` for local compose).
+- The backend Dockerfile lives at the repository root (`Dockerfile`). This is intentional to support monorepo hosts.
+- Railway is configured to reference that root Dockerfile (see `apps/backend/railway.toml` with `dockerfilePath = "../Dockerfile"`).
+- An additional Dockerfile also exists in `apps/backend/` for local builds if you prefer building from the service folder.
+
+Optional: You can run the backend in Docker to avoid local toolchain/linker issues on Windows. Use the root-level Dockerfile and ensure your `DATABASE_URL` points to the Postgres container (e.g., `postgres://postgres:password@localhost:5433/realtime_notes` for local compose).
   
 5) Test realtime features (open same doc in 2 tabs)
 - Type in Tab A → Tab B should show:
@@ -170,37 +172,18 @@ See `.env.example`. Key ones:
 
 ## 🚀 Deployment
 
-### Deployment Guide
+### Quick Deploy (15 minutes)
+See **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** for step-by-step guide.
 
-**Deploy to Render.com + Vercel:**
-
-1. **Backend (Render.com)**:
-   - Sign up at https://render.com (no credit card needed)
-   - Create New → Web Service
-   - Connect GitHub repo: `PrasetyoWibowoo/ChatApp`
-   - Settings:
-     - Name: `chatapp-backend`
-     - Root Directory: `apps/backend`
-     - Environment: `Docker`
-     - Instance Type: `Free`
-   - Add environment variables (see `.env.example`)
-   - Deploy!
-
-2. **Database (Render PostgreSQL)**:
-   - Create New → PostgreSQL
-   - Name: `chatapp-db`
-   - Copy **Internal Database URL**
-   - Add to backend's `DATABASE_URL` variable
-
-3. **Frontend (Vercel)**:
-   - Import GitHub repo at https://vercel.com
-   - Root Directory: `apps/frontend`
-   - Framework: Vite
-   - Environment Variables:
-     - `VITE_API_URL`: Your Render backend URL
-   - Deploy!
-
-See **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** for detailed instructions
+### Full Documentation
+See **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** for complete deployment documentation including:
+- GitHub setup
+- Railway (Backend + Database)
+- Vercel (Frontend)
+- Environment variables
+- CORS configuration
+- Troubleshooting
+- Free alternatives
 
 ### Pre-Deployment Checklist
 See **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** to ensure everything is ready.
@@ -215,15 +198,14 @@ Get free credits for Railway, DigitalOcean, and more:
 | Component | Platform | Status |
 |-----------|----------|--------|
 | Frontend | Vercel | ✅ Free Forever |
-| Backend | Render.com | ✅ Free (750 hrs/month) |
-| Database | Render PostgreSQL | ✅ Free (90 days, then rotates) |
+| Backend | Appwrite Cloud | ✅ Free Forever |
+| Database | Appwrite Database | ✅ Free (Included) |
+| Auth & Storage | Appwrite | ✅ Free (Included) |
 | Domain | Vercel | ✅ Free Subdomain |
 
 **Total Cost**: **$0/month** 🎉
 
 **No Credit Card Required!** ✨
-
-> **Note**: Render free tier has proper CORS support unlike Railway
 
 ## 🔗 Live Demo
 
@@ -231,9 +213,11 @@ Get free credits for Railway, DigitalOcean, and more:
 
 ## 📚 Documentation
 
-- See `.env.example` for all required environment variables
-- Render.com provides proper CORS support (no proxy interference)
-- Free tier includes 750 hours/month (enough for personal projects)
+- **[QUICK_DEPLOY.md](QUICK_DEPLOY.md)** - Deploy in 15 minutes
+- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Complete deployment guide
+- **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** - Pre-deployment checklist
+- **[EMAIL_VERIFICATION_SETUP.md](EMAIL_VERIFICATION_SETUP.md)** - Email verification setup
+- **[PRODUCTION_FEATURES.md](PRODUCTION_FEATURES.md)** - Production features guide
 
 ## 🤝 Contributing
 
@@ -246,10 +230,10 @@ This project is open source and available under the MIT License.
 ## 🙏 Acknowledgments
 
 - Built with Rust, SolidJS, and PostgreSQL
-- Deployed on Render.com and Vercel (free tiers)
+- Deployed on Railway and Vercel (free tiers)
 - Email service powered by Gmail SMTP
 
 ## Notes
 - This is a production-ready foundation with rate limiting, email verification, and security best practices
-- Render.com free tier provides proper CORS support (unlike Railway's proxy limitations)
-- Backend includes health check endpoint at `/health` for monitoring
+- Further hardening (enhanced monitoring, load balancing, CDN) can be added for larger scale
+- CORS configured for Vercel production domain
