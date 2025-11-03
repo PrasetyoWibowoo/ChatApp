@@ -4,6 +4,7 @@ import { sendVerificationCode } from '../lib/api';
 
 export default function Signup() {
   const [email, setEmail] = createSignal('');
+  const [username, setUsername] = createSignal('');
   const [password, setPassword] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -19,7 +20,16 @@ export default function Signup() {
     
     try {
       // Create account
-      await api.post('/api/auth/signup', { email: email(), password: password() });
+      const response = await api.post('/api/auth/signup', { 
+        email: email(), 
+        username: username(),
+        password: password() 
+      });
+      
+      // Store token
+      if (response.data.token) {
+        localStorage.setItem('token', response.data.token);
+      }
       
       // Send verification code
       await sendVerificationCode(email());
@@ -27,7 +37,8 @@ export default function Signup() {
       // Redirect to verification page with email
       window.location.href = `/verify-email?email=${encodeURIComponent(email())}`;
     } catch (err: any) {
-      setError(err?.response?.data?.message || err.message || 'Signup failed');
+      console.error('Signup error:', err);
+      setError(err?.response?.data?.error || err?.response?.data?.message || err.message || 'Signup failed');
     } finally {
       setLoading(false);
     }
@@ -42,6 +53,10 @@ export default function Signup() {
           <div>
             <label class="label">Email</label>
             <input class="input" type="email" value={email()} onInput={e => setEmail(e.currentTarget.value)} required />
+          </div>
+          <div>
+            <label class="label">Username</label>
+            <input class="input" type="text" value={username()} onInput={e => setUsername(e.currentTarget.value)} required />
           </div>
           <div>
             <label class="label">Password</label>
