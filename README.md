@@ -177,9 +177,13 @@ See `.env.example`. Key ones:
 **Required:** Railway blocks SMTP ports, so we use Resend HTTP API
 
 1. Sign up at https://resend.com (free 100 emails/day)
-2. Add domain or use default `onboarding@resend.dev`
-3. Create API key
-4. Copy key for Railway env vars
+2. Create API key (click "API Keys" → "Create API Key")
+3. Copy key for Railway env vars
+
+**⚠️ Important for Testing:**
+- Free tier only sends to **your registered email**
+- To send to other emails: verify domain at https://resend.com/domains
+- For testing: use your own email for signup
 
 ### Railway (Backend + Database)
 1. Sign up at https://railway.app with GitHub
@@ -222,6 +226,7 @@ See `.env.example`. Key ones:
 - Railway blocks SMTP ports (587/465) on free tier
 - Solution: Use Resend HTTP API instead
 - Set `RESEND_API_KEY` in Railway environment variables
+- **Resend free tier**: Can only send to your registered email unless you verify a domain
 
 ## 🤝 Contributing
 
