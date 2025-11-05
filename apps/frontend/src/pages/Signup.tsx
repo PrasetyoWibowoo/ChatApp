@@ -30,14 +30,23 @@ export default function Signup() {
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
       }
+      if (response.data.user_id) {
+        localStorage.setItem('user_id', response.data.user_id);
+      }
+      if (response.data.avatar_url) {
+        localStorage.setItem('avatar_url', response.data.avatar_url);
+      }
       localStorage.setItem('username', username());
       localStorage.setItem('email', email());
       
-      // Send verification code
-      await sendVerificationCode(email());
+      // TEMPORARILY DISABLED: Email verification
+      // Skip verification and go directly to home
+      // TODO: Re-enable when domain is verified in Resend
+      // await sendVerificationCode(email());
+      // window.location.href = `/verify-email?email=${encodeURIComponent(email())}`;
       
-      // Redirect to verification page with email
-      window.location.href = `/verify-email?email=${encodeURIComponent(email())}`;
+      // Redirect to home page
+      window.location.href = '/';
     } catch (err: any) {
       console.error('Signup error:', err);
       setError(err?.response?.data?.error || err?.response?.data?.message || err.message || 'Signup failed');

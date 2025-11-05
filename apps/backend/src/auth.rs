@@ -72,10 +72,12 @@ pub async fn login(pool: web::Data<PgPool>, keys: web::Data<JwtKeys>, payload: w
         .map_err(|_| AppError::Internal)?;
     let Some(row) = row_opt else { return Err(AppError::Unauthorized) };
     
-    let email_verified: bool = row.try_get("email_verified").unwrap_or(false);
-    if !email_verified {
-        return Err(AppError::BadRequest("Email not verified. Please verify your email first.".into()));
-    }
+    // TEMPORARILY DISABLED: Email verification check
+    // TODO: Re-enable when domain is verified in Resend
+    // let email_verified: bool = row.try_get("email_verified").unwrap_or(false);
+    // if !email_verified {
+    //     return Err(AppError::BadRequest("Email not verified. Please verify your email first.".into()));
+    // }
     
     let password_hash: String = row.try_get("password_hash").map_err(|_| AppError::Internal)?;
     let parsed = PasswordHash::new(&password_hash).map_err(|_| AppError::Internal)?;
