@@ -78,6 +78,9 @@ export default function Chat() {
   const [searchQuery, setSearchQuery] = createSignal('');
   const [searchResults, setSearchResults] = createSignal<Message[]>([]);
   const [showSearch, setShowSearch] = createSignal(false);
+  // Call user selection state
+  const [showCallMenu, setShowCallMenu] = createSignal(false);
+  const [callMenuType, setCallMenuType] = createSignal<'voice' | 'video'>('voice');
   
   let ws: WebSocket | null = null;
   let messagesContainer: HTMLDivElement | undefined;
@@ -891,11 +894,8 @@ export default function Chat() {
           <button 
             class="btn btn-ghost icon-btn"
             onClick={() => {
-              const userId = localStorage.getItem('user_id');
-              const username = localStorage.getItem('username') || 'Unknown';
-              if (userId) {
-                webrtcService.startCall('voice', userId, username);
-              }
+              setCallMenuType('voice');
+              setShowCallMenu(true);
             }}
             title="Start voice call"
           >
@@ -904,11 +904,8 @@ export default function Chat() {
           <button 
             class="btn btn-ghost icon-btn"
             onClick={() => {
-              const userId = localStorage.getItem('user_id');
-              const username = localStorage.getItem('username') || 'Unknown';
-              if (userId) {
-                webrtcService.startCall('video', userId, username);
-              }
+              setCallMenuType('video');
+              setShowCallMenu(true);
             }}
             title="Start video call"
           >
@@ -1581,6 +1578,42 @@ export default function Chat() {
                 <p class="search-empty">No messages found</p>
               </Show>
             </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Call User Selection Modal */}
+      <Show when={showCallMenu()}>
+        <div class="modal-overlay" onClick={() => setShowCallMenu(false)}>
+          <div class="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Select User to Call</h3>
+            <div class="user-list">
+              <For each={onlineUsers().filter(u => u.user_id !== myUserId)}>
+                {(user) => (
+                  <button
+                    class="user-item"
+                    onClick={() => {
+                      webrtcService.startCall(
+                        callMenuType(),
+                        user.user_id,
+                        user.email.split('@')[0]
+                      );
+                      setShowCallMenu(false);
+                    }}
+                  >
+                    <div class="user-avatar">{getInitials(user.email)}</div>
+                    <div class="user-info">
+                      <div class="user-name">{getDisplayName(user.email)}</div>
+                      <div class="user-status">Online</div>
+                    </div>
+                  </button>
+                )}
+              </For>
+              <Show when={onlineUsers().filter(u => u.user_id !== myUserId).length === 0}>
+                <p class="no-users">No other users online in this room</p>
+              </Show>
+            </div>
+            <button class="btn btn-secondary" onClick={() => setShowCallMenu(false)}>Cancel</button>
           </div>
         </div>
       </Show>
