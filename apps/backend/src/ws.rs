@@ -71,6 +71,32 @@ pub enum ClientMsg {
     },
     #[serde(rename = "ping")]
     Ping,
+    // WebRTC signaling messages
+    #[serde(rename = "call-offer")]
+    CallOffer {
+        call_type: String,
+        offer: serde_json::Value,
+        target_user_id: Uuid,
+        caller_username: String,
+    },
+    #[serde(rename = "call-answer")]
+    CallAnswer {
+        answer: serde_json::Value,
+        target_user_id: Uuid,
+    },
+    #[serde(rename = "call-ice-candidate")]
+    CallIceCandidate {
+        candidate: serde_json::Value,
+        target_user_id: Uuid,
+    },
+    #[serde(rename = "call-rejected")]
+    CallRejected {
+        target_user_id: Uuid,
+    },
+    #[serde(rename = "call-ended")]
+    CallEnded {
+        target_user_id: Uuid,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -129,6 +155,26 @@ pub enum ServerMsg {
         user_id: Uuid,
         emoji: String,
     },
+    // WebRTC signaling messages
+    #[serde(rename = "call-offer")]
+    CallOffer {
+        sender_id: Uuid,
+        call_type: String,
+        offer: serde_json::Value,
+        caller_username: String,
+    },
+    #[serde(rename = "call-answer")]
+    CallAnswer {
+        answer: serde_json::Value,
+    },
+    #[serde(rename = "call-ice-candidate")]
+    CallIceCandidate {
+        candidate: serde_json::Value,
+    },
+    #[serde(rename = "call-rejected")]
+    CallRejected,
+    #[serde(rename = "call-ended")]
+    CallEnded,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -702,6 +748,57 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             // Update heartbeat on ping from client
                             self.hb = Instant::now();
                             log::info!("[WS] Keepalive ping from {}", self.user_email);
+                        }
+                        // WebRTC Call Signaling
+                        ClientMsg::CallOffer { call_type, offer, target_user_id, caller_username } => {
+                            log::info!("[WebRTC] Call offer from {} to {}", self.user_email, target_user_id);
+                            let msg = ServerMsg::CallOffer {
+                                sender_id: self.user_id,
+                                call_type,
+                                offer,
+                                caller_username,
+                            };
+                            if let Ok(json) = serde_json::to_string(&msg) {
+                                if let Some(tx) = self.ws_state.txs.get(&self.room_id) {
+                                    let _ = tx.send(json);
+                                }
+                            }
+                        }
+                        ClientMsg::CallAnswer { answer, target_user_id } => {
+                            log::info!("[WebRTC] Call answer from {} to {}", self.user_email, target_user_id);
+                            let msg = ServerMsg::CallAnswer { answer };
+                            if let Ok(json) = serde_json::to_string(&msg) {
+                                if let Some(tx) = self.ws_state.txs.get(&self.room_id) {
+                                    let _ = tx.send(json);
+                                }
+                            }
+                        }
+                        ClientMsg::CallIceCandidate { candidate, target_user_id } => {
+                            log::info!("[WebRTC] ICE candidate from {} to {}", self.user_email, target_user_id);
+                            let msg = ServerMsg::CallIceCandidate { candidate };
+                            if let Ok(json) = serde_json::to_string(&msg) {
+                                if let Some(tx) = self.ws_state.txs.get(&self.room_id) {
+                                    let _ = tx.send(json);
+                                }
+                            }
+                        }
+                        ClientMsg::CallRejected { target_user_id } => {
+                            log::info!("[WebRTC] Call rejected by {}", self.user_email);
+                            let msg = ServerMsg::CallRejected;
+                            if let Ok(json) = serde_json::to_string(&msg) {
+                                if let Some(tx) = self.ws_state.txs.get(&self.room_id) {
+                                    let _ = tx.send(json);
+                                }
+                            }
+                        }
+                        ClientMsg::CallEnded { target_user_id } => {
+                            log::info!("[WebRTC] Call ended by {}", self.user_email);
+                            let msg = ServerMsg::CallEnded;
+                            if let Ok(json) = serde_json::to_string(&msg) {
+                                if let Some(tx) = self.ws_state.txs.get(&self.room_id) {
+                                    let _ = tx.send(json);
+                                }
+                            }
                         }
                     }
                 }

@@ -1,7 +1,9 @@
 import { onCleanup, onMount, createSignal, createMemo, For, Show } from 'solid-js';
 import EmojiPicker from '../components/EmojiPicker';
-import { SmileIcon, ImageIcon, SendIcon, LinkIcon, CheckIcon, CheckDoubleIcon, ReplyIcon, TrashIcon, SearchIcon, EditIcon } from '../components/Icons';
+import CallInterface from '../components/CallInterface';
+import { SmileIcon, ImageIcon, SendIcon, LinkIcon, CheckIcon, CheckDoubleIcon, ReplyIcon, TrashIcon, SearchIcon, EditIcon, PhoneIcon, VideoIcon } from '../components/Icons';
 import { getDisplayName, getInitials } from '../lib/displayName';
+import { webrtcService } from '../lib/webrtc';
 
 function getApiBaseUrl() {
   const hostname = window.location.hostname;
@@ -185,6 +187,9 @@ export default function Chat() {
       console.log('[Chat] Connected to room:', roomId);
       setStatus('connected');
       
+      // Set WebSocket for WebRTC service
+      webrtcService.setWebSocket(ws, roomId);
+      
       // Mark room as read when entering
       fetch(`${apiBase}/api/rooms/${roomId}/read?token=${encodeURIComponent(token || '')}`, {
         method: 'POST',
@@ -366,6 +371,24 @@ export default function Chat() {
             }
             return m;
           }));
+        } else if (msg.type === 'call-offer') {
+          console.log('[WebRTC] Received call offer from', msg.callerUsername);
+          // Store offer for later acceptance
+          (window as any).__pendingCallOffer = msg.offer;
+          webrtcService.handleCallOffer(msg.offer, msg.callType, msg.sender_id, msg.callerUsername);
+        } else if (msg.type === 'call-answer') {
+          console.log('[WebRTC] Received call answer');
+          webrtcService.handleCallAnswer(msg.answer);
+        } else if (msg.type === 'call-ice-candidate') {
+          console.log('[WebRTC] Received ICE candidate');
+          webrtcService.handleIceCandidate(msg.candidate);
+        } else if (msg.type === 'call-rejected') {
+          console.log('[WebRTC] Call was rejected');
+          alert('Call rejected');
+          webrtcService.endCall();
+        } else if (msg.type === 'call-ended') {
+          console.log('[WebRTC] Call ended by remote user');
+          webrtcService.endCall();
         }
       } catch (e) {
         console.error('[Chat] Parse error:', e);
@@ -908,6 +931,32 @@ export default function Chat() {
             </button>
           </div>
           <div class="spacer" />
+          <button 
+            class="btn btn-ghost icon-btn"
+            onClick={() => {
+              const userId = localStorage.getItem('user_id');
+              const username = localStorage.getItem('username') || 'Unknown';
+              if (userId) {
+                webrtcService.startCall('voice', userId, username);
+              }
+            }}
+            title="Start voice call"
+          >
+            <PhoneIcon />
+          </button>
+          <button 
+            class="btn btn-ghost icon-btn"
+            onClick={() => {
+              const userId = localStorage.getItem('user_id');
+              const username = localStorage.getItem('username') || 'Unknown';
+              if (userId) {
+                webrtcService.startCall('video', userId, username);
+              }
+            }}
+            title="Start video call"
+          >
+            <VideoIcon />
+          </button>
           <button 
             class="btn btn-ghost icon-btn"
             onClick={() => setShowSearch(true)}
@@ -1578,6 +1627,9 @@ export default function Chat() {
           </div>
         </div>
       </Show>
+
+      {/* Call Interface Overlay */}
+      <CallInterface />
     </>
   );
 }
