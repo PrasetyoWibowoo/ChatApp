@@ -295,6 +295,7 @@ export default function Chat() {
             }
           }
         } else if (msg.type === 'online_users') {
+          console.log('[Chat] Online users received:', msg.users);
           setOnlineUsers(msg.users || []);
         } else if (msg.type === 'read_receipt') {
           setReadReceipts((prev) => {
@@ -1616,25 +1617,29 @@ export default function Chat() {
             <h3>Select User to Call</h3>
             <div class="user-list">
               <For each={onlineUsers().filter(u => u.user_id !== myUserId)}>
-                {(user) => (
-                  <button
-                    class="user-item"
-                    onClick={() => {
-                      webrtcService.startCall(
-                        callMenuType(),
-                        user.user_id,
-                        user.email.split('@')[0]
-                      );
-                      setShowCallMenu(false);
-                    }}
-                  >
-                    <div class="user-avatar">{getInitials(user.email)}</div>
-                    <div class="user-info">
-                      <div class="user-name">{getDisplayName(user.email)}</div>
-                      <div class="user-status">Online</div>
-                    </div>
-                  </button>
-                )}
+                {(user) => {
+                  console.log('[Call Modal] User:', user.email, 'ID:', user.user_id, 'Type:', typeof user.user_id);
+                  return (
+                    <button
+                      class="user-item"
+                      onClick={() => {
+                        console.log('[Call] Calling user:', user.user_id, 'Type:', typeof user.user_id);
+                        webrtcService.startCall(
+                          callMenuType(),
+                          user.user_id,
+                          user.email.split('@')[0]
+                        );
+                        setShowCallMenu(false);
+                      }}
+                    >
+                      <div class="user-avatar">{getInitials(user.email)}</div>
+                      <div class="user-info">
+                        <div class="user-name">{getDisplayName(user.email)}</div>
+                        <div class="user-status">Online</div>
+                      </div>
+                    </button>
+                  );
+                }}
               </For>
               <Show when={onlineUsers().filter(u => u.user_id !== myUserId).length === 0}>
                 <p class="no-users">No other users online in this room</p>
