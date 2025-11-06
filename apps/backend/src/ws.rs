@@ -782,7 +782,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                 }
                             }
                         }
-                        ClientMsg::CallRejected { target_user_id } => {
+                        ClientMsg::CallRejected { target_user_id: _ } => {
                             log::info!("[WebRTC] Call rejected by {}", self.user_email);
                             let msg = ServerMsg::CallRejected;
                             if let Ok(json) = serde_json::to_string(&msg) {
@@ -791,7 +791,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                 }
                             }
                         }
-                        ClientMsg::CallEnded { target_user_id } => {
+                        ClientMsg::CallEnded { target_user_id: _ } => {
                             log::info!("[WebRTC] Call ended by {}", self.user_email);
                             let msg = ServerMsg::CallEnded;
                             if let Ok(json) = serde_json::to_string(&msg) {

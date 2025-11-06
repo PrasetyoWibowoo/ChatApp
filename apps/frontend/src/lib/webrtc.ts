@@ -41,7 +41,8 @@ class WebRTCService {
     isIncoming: false,
   });
 
-  setWebSocket(ws: WebSocket, roomId: string) {
+  setWebSocket(ws: WebSocket | null, roomId: string) {
+    if (!ws) return;
     this.ws = ws;
     this.roomId = roomId;
   }
@@ -159,7 +160,8 @@ class WebRTCService {
     try {
       console.log('[WebRTC] Accepting call');
 
-      const [callStateValue, setCallState] = this.callState;
+      const [callStateGetter, setCallState] = this.callState;
+      const callStateValue = callStateGetter(); // Get current state
 
       // Get user media
       const constraints = {
@@ -215,12 +217,12 @@ class WebRTCService {
       }
 
       // Update state
-      setCallState({
-        ...callStateValue,
+      setCallState(prev => ({
+        ...prev,
         isInCall: true,
         isRinging: false,
         isIncoming: false,
-      });
+      }));
 
       // Attach local stream to video element
       const localVideo = document.getElementById('local-video') as HTMLVideoElement;
@@ -242,11 +244,11 @@ class WebRTCService {
         await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
         
         // Update state - call connected
-        const [callStateValue, setCallState] = this.callState;
-        setCallState({
-          ...callStateValue,
+        const [, setCallState] = this.callState;
+        setCallState(prev => ({
+          ...prev,
           isRinging: false,
-        });
+        }));
       }
     } catch (error) {
       console.error('[WebRTC] Failed to handle call answer:', error);
@@ -265,7 +267,8 @@ class WebRTCService {
 
   rejectCall() {
     console.log('[WebRTC] Rejecting call');
-    const [callStateValue] = this.callState;
+    const [callStateGetter] = this.callState;
+    const callStateValue = callStateGetter();
     
     // Notify remote user
     if (this.ws && callStateValue.remoteUserId) {
@@ -281,7 +284,8 @@ class WebRTCService {
   endCall() {
     console.log('[WebRTC] Ending call');
 
-    const [callStateValue] = this.callState;
+    const [callStateGetter] = this.callState;
+    const callStateValue = callStateGetter();
 
     // Notify remote user if in call
     if (this.ws && callStateValue.isInCall && callStateValue.remoteUserId) {
@@ -309,8 +313,8 @@ class WebRTCService {
     }
 
     // Reset state
-    const [, setCallState] = this.callState;
-    setCallState({
+    const [, setCallStateEnd] = this.callState;
+    setCallStateEnd({
       isInCall: false,
       callType: null,
       isMuted: false,
@@ -327,8 +331,8 @@ class WebRTCService {
       const audioTrack = this.localStream.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
-        const [callStateValue, setCallState] = this.callState;
-        setCallState({ ...callStateValue, isMuted: !audioTrack.enabled });
+        const [, setCallStateMute] = this.callState;
+        setCallStateMute(prev => ({ ...prev, isMuted: !audioTrack.enabled }));
       }
     }
   }
@@ -338,8 +342,8 @@ class WebRTCService {
       const videoTrack = this.localStream.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
-        const [callStateValue, setCallState] = this.callState;
-        setCallState({ ...callStateValue, isVideoOff: !videoTrack.enabled });
+        const [, setCallStateVideo] = this.callState;
+        setCallStateVideo(prev => ({ ...prev, isVideoOff: !videoTrack.enabled }));
       }
     }
   }
