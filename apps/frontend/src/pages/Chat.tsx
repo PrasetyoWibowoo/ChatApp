@@ -339,19 +339,34 @@ export default function Chat() {
             return m;
           }));
         } else if (msg.type === 'call-offer') {
-          console.log('[WebRTC] Incoming call from', msg.callerUsername);
-          (window as any).__pendingCallOffer = msg.offer;
-          webrtcService.handleCallOffer(msg.offer, msg.callType, msg.sender_id, msg.callerUsername);
+          // Only handle if this message is for me
+          if (msg.target_user_id === myUserId) {
+            console.log('[WebRTC] Incoming call from', msg.callerUsername);
+            (window as any).__pendingCallOffer = msg.offer;
+            webrtcService.handleCallOffer(msg.offer, msg.callType, msg.sender_id, msg.callerUsername);
+          }
         } else if (msg.type === 'call-answer') {
-          console.log('[WebRTC] Call answered');
-          webrtcService.handleCallAnswer(msg.answer);
+          // Only handle if this message is for me
+          if (msg.target_user_id === myUserId) {
+            console.log('[WebRTC] Call answered');
+            webrtcService.handleCallAnswer(msg.answer);
+          }
         } else if (msg.type === 'call-ice-candidate') {
-          webrtcService.handleIceCandidate(msg.candidate);
+          // Only handle if this message is for me
+          if (msg.target_user_id === myUserId) {
+            webrtcService.handleIceCandidate(msg.candidate);
+          }
         } else if (msg.type === 'call-rejected') {
-          alert('Call rejected');
-          webrtcService.endCall();
+          // Only handle if this message is for me
+          if (msg.target_user_id === myUserId) {
+            alert('Call rejected');
+            webrtcService.endCall();
+          }
         } else if (msg.type === 'call-ended') {
-          webrtcService.endCall();
+          // Only handle if this message is for me
+          if (msg.target_user_id === myUserId) {
+            webrtcService.endCall();
+          }
         }
       } catch (e) {
         console.error('[Chat] Parse error:', e);
