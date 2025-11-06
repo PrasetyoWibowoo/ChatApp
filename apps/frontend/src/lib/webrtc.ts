@@ -77,7 +77,7 @@ class WebRTCService {
           this.ws.send(JSON.stringify({
             type: 'call-ice-candidate',
             candidate: event.candidate,
-            targetUserId: remoteUserId,
+            target_user_id: remoteUserId,
           }));
         }
       };
@@ -98,13 +98,15 @@ class WebRTCService {
 
       // Send offer via WebSocket
       if (this.ws) {
-        this.ws.send(JSON.stringify({
+        const offerMessage = {
           type: 'call-offer',
-          callType,
+          call_type: callType,
           offer: offer,
-          targetUserId: remoteUserId,
-          callerUsername: localStorage.getItem('username'),
-        }));
+          target_user_id: remoteUserId,
+          caller_username: localStorage.getItem('username'),
+        };
+        console.log('[WebRTC] Sending offer:', offerMessage);
+        this.ws.send(JSON.stringify(offerMessage));
       }
 
       // Update state
@@ -189,7 +191,7 @@ class WebRTCService {
           this.ws.send(JSON.stringify({
             type: 'call-ice-candidate',
             candidate: event.candidate,
-            targetUserId: callStateValue.remoteUserId,
+            target_user_id: callStateValue.remoteUserId,
           }));
         }
       };
@@ -216,7 +218,7 @@ class WebRTCService {
         this.ws.send(JSON.stringify({
           type: 'call-answer',
           answer: answer,
-          targetUserId: callStateValue.remoteUserId,
+          target_user_id: callStateValue.remoteUserId,
         }));
       }
 
@@ -278,7 +280,7 @@ class WebRTCService {
     if (this.ws && callStateValue.remoteUserId) {
       this.ws.send(JSON.stringify({
         type: 'call-rejected',
-        targetUserId: callStateValue.remoteUserId,
+        target_user_id: callStateValue.remoteUserId,
       }));
     }
 
@@ -295,7 +297,7 @@ class WebRTCService {
     if (this.ws && callStateValue.isInCall && callStateValue.remoteUserId) {
       this.ws.send(JSON.stringify({
         type: 'call-ended',
-        targetUserId: callStateValue.remoteUserId,
+        target_user_id: callStateValue.remoteUserId,
       }));
     }
 

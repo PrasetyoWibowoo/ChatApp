@@ -245,9 +245,9 @@ export default function Chat() {
       try {
         const msg = JSON.parse(event.data);
         
-        // Log ALL messages for debugging
+        // Log ALL WebRTC-related messages for debugging
         if (msg.type && msg.type.startsWith('call-')) {
-          console.log('[WebRTC] Message received:', msg.type, msg);
+          console.log('[WebRTC] RAW Message received:', JSON.stringify(msg));
         }
 
         if (msg.type === 'history') {
