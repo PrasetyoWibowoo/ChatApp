@@ -53,7 +53,9 @@ class WebRTCService {
 
   async startCall(callType: CallType, remoteUserId: string, remoteUsername: string) {
     try {
-      console.log(`[WebRTC] Starting ${callType} call to ${remoteUsername}`);
+      console.log(`[WebRTC] Starting ${callType} call to ${remoteUsername} (ID: ${remoteUserId})`);
+      console.log('[WebRTC] User Agent:', navigator.userAgent);
+      console.log('[WebRTC] WebSocket state:', this.ws?.readyState, 'Room:', this.roomId);
 
       // Get user media
       const constraints = {
@@ -61,19 +63,24 @@ class WebRTCService {
         video: callType === 'video',
       };
 
+      console.log('[WebRTC] Requesting media permissions:', constraints);
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('[WebRTC] Got local stream:', this.localStream.getTracks().length, 'tracks');
 
       // Create peer connection
       this.peerConnection = new RTCPeerConnection(this.iceServers);
+      console.log('[WebRTC] Peer connection created');
 
       // Add local stream tracks to peer connection
       this.localStream.getTracks().forEach(track => {
+        console.log('[WebRTC] Adding track:', track.kind, track.label);
         this.peerConnection!.addTrack(track, this.localStream!);
       });
 
       // Handle ICE candidates
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate && this.ws) {
+          console.log('[WebRTC] Sending ICE candidate');
           this.ws.send(JSON.stringify({
             type: 'call-ice-candidate',
             candidate: event.candidate,
@@ -84,20 +91,26 @@ class WebRTCService {
 
       // Handle remote stream
       this.peerConnection.ontrack = (event) => {
-        console.log('[WebRTC] Received remote track');
+        console.log('[WebRTC] Received remote track:', event.track.kind);
         this.remoteStream = event.streams[0];
-        const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        if (remoteVideo) {
-          remoteVideo.srcObject = this.remoteStream;
-        }
+        setTimeout(() => {
+          const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
+          if (remoteVideo) {
+            remoteVideo.srcObject = this.remoteStream;
+            remoteVideo.play().catch(e => console.error('[WebRTC] Failed to play remote video:', e));
+            console.log('[WebRTC] Remote video attached and playing');
+          }
+        }, 100);
       };
 
       // Create offer
+      console.log('[WebRTC] Creating offer...');
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
+      console.log('[WebRTC] Offer created and set as local description');
 
       // Send offer via WebSocket
-      if (this.ws) {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         const offerMessage = {
           type: 'call-offer',
           call_type: callType,
@@ -105,8 +118,13 @@ class WebRTCService {
           target_user_id: remoteUserId,
           caller_username: localStorage.getItem('username'),
         };
-        console.log('[WebRTC] Sending offer:', offerMessage);
+        console.log('[WebRTC] Sending offer to target:', remoteUserId);
+        console.log('[WebRTC] Offer message:', JSON.stringify(offerMessage).substring(0, 200));
         this.ws.send(JSON.stringify(offerMessage));
+        console.log('[WebRTC] ✅ Offer sent successfully');
+      } else {
+        console.error('[WebRTC] ❌ Cannot send offer - WebSocket not connected!', this.ws?.readyState);
+        throw new Error('WebSocket not connected');
       }
 
       // Update state
@@ -121,16 +139,34 @@ class WebRTCService {
         isRinging: true,
         isIncoming: false,
       });
+      console.log('[WebRTC] Call state updated - ringing');
 
-      // Attach local stream to video element
-      const localVideo = document.getElementById('local-video') as HTMLVideoElement;
-      if (localVideo) {
-        localVideo.srcObject = this.localStream;
-      }
+      // Attach local stream to video element (with retry for DOM ready)
+      setTimeout(() => {
+        const localVideo = document.getElementById('local-video') as HTMLVideoElement;
+        if (localVideo && this.localStream) {
+          localVideo.srcObject = this.localStream;
+          localVideo.play().catch(e => console.error('[WebRTC] Failed to play local video:', e));
+          console.log('[WebRTC] Local video attached and playing');
+        } else {
+          console.warn('[WebRTC] Local video element not found yet');
+        }
+      }, 100);
 
     } catch (error) {
-      console.error('[WebRTC] Failed to start call:', error);
-      alert('Failed to access camera/microphone. Please grant permissions.');
+      console.error('[WebRTC] ❌ Failed to start call:', error);
+      if (error instanceof DOMException) {
+        console.error('[WebRTC] DOMException:', error.name, error.message);
+        if (error.name === 'NotAllowedError') {
+          alert('Camera/Microphone permission denied. Please allow access and try again.');
+        } else if (error.name === 'NotFoundError') {
+          alert('No camera/microphone found on this device.');
+        } else {
+          alert('Failed to access camera/microphone: ' + error.message);
+        }
+      } else {
+        alert('Failed to start call: ' + (error as Error).message);
+      }
       this.endCall();
     }
   }
@@ -198,12 +234,16 @@ class WebRTCService {
 
       // Handle remote stream
       this.peerConnection.ontrack = (event) => {
-        console.log('[WebRTC] Received remote track');
+        console.log('[WebRTC] Received remote track:', event.track.kind);
         this.remoteStream = event.streams[0];
-        const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
-        if (remoteVideo) {
-          remoteVideo.srcObject = this.remoteStream;
-        }
+        setTimeout(() => {
+          const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
+          if (remoteVideo) {
+            remoteVideo.srcObject = this.remoteStream;
+            remoteVideo.play().catch(e => console.error('[WebRTC] Failed to play remote video:', e));
+            console.log('[WebRTC] Remote video attached and playing');
+          }
+        }, 100);
       };
 
       // Set remote description
@@ -230,11 +270,15 @@ class WebRTCService {
         isIncoming: false,
       }));
 
-      // Attach local stream to video element
-      const localVideo = document.getElementById('local-video') as HTMLVideoElement;
-      if (localVideo) {
-        localVideo.srcObject = this.localStream;
-      }
+      // Attach local stream to video element (with retry for DOM ready)
+      setTimeout(() => {
+        const localVideo = document.getElementById('local-video') as HTMLVideoElement;
+        if (localVideo && this.localStream) {
+          localVideo.srcObject = this.localStream;
+          localVideo.play().catch(e => console.error('[WebRTC] Failed to play local video:', e));
+          console.log('[WebRTC] Local video attached and playing');
+        }
+      }, 100);
 
     } catch (error) {
       console.error('[WebRTC] Failed to accept call:', error);

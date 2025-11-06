@@ -26,8 +26,8 @@ export default function CallInterface() {
             playsinline
           />
 
-          {/* Local Video (small, picture-in-picture) */}
-          <Show when={callState().callType === 'video'}>
+          {/* Local Video (small, picture-in-picture) - Always show for video calls */}
+          <Show when={callState().callType === 'video' && !callState().isVideoOff}>
             <video 
               id="local-video" 
               class="local-video" 
