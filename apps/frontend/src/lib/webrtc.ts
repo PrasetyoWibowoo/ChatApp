@@ -42,9 +42,13 @@ class WebRTCService {
   });
 
   setWebSocket(ws: WebSocket | null, roomId: string) {
-    if (!ws) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error('[WebRTC] Cannot set WebSocket - not connected');
+      return;
+    }
     this.ws = ws;
     this.roomId = roomId;
+    console.log('[WebRTC] WebSocket set successfully for room:', roomId);
   }
 
   async startCall(callType: CallType, remoteUserId: string, remoteUsername: string) {

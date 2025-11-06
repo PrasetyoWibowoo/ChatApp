@@ -64,7 +64,7 @@ export default function CallInterface() {
                 onClick={() => webrtcService.acceptCall(
                   (window as any).__pendingCallOffer,
                   callState().callType!
-                )}
+                )} 
                 title="Accept Call"
               >
                 <PhoneIcon />

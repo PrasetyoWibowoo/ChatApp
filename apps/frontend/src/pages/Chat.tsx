@@ -187,21 +187,23 @@ export default function Chat() {
       console.log('[Chat] Connected to room:', roomId);
       setStatus('connected');
       
-      // Set WebSocket for WebRTC service
-      webrtcService.setWebSocket(ws, roomId);
+      // Set WebSocket for WebRTC service - FIXED: Pass ws instance safely
+      if (ws) {
+        webrtcService.setWebSocket(ws, roomId);
+        console.log('[WebRTC] Service connected to WebSocket');
+      }
       
       // Mark room as read when entering
       fetch(`${apiBase}/api/rooms/${roomId}/read?token=${encodeURIComponent(token || '')}`, {
         method: 'POST',
       }).catch(err => console.error('Failed to mark room as read:', err));
       
-      // Send ping every 3 seconds to keep connection alive
+      // Send ping every 30 seconds to keep connection alive (reduced frequency)
       pingInterval = window.setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
-          console.log('[Chat] Sending keepalive ping');
           ws.send(JSON.stringify({ type: 'ping' }));
         }
-      }, 3000);
+      }, 30000);
     };
 
     ws.onclose = (event) => {
@@ -230,29 +232,18 @@ export default function Chat() {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        console.log('[Chat] Received message type:', msg.type, msg);
 
         if (msg.type === 'history') {
           const historyMessages = msg.messages || [];
-          console.log('[History] Received', historyMessages.length, 'messages');
-          
-          // Debug: Check if read_by data exists
-          historyMessages.forEach((histMsg: Message) => {
-            if (histMsg.read_by) {
-              console.log(`[History] Msg ${histMsg.id.substring(0,8)} read_by:`, histMsg.read_by);
-            }
-          });
           
           // Populate read receipts from history BEFORE setting messages
           setReadReceipts((prev) => {
             const newMap = new Map(prev);
             historyMessages.forEach((histMsg: Message) => {
               if (histMsg.read_by && histMsg.read_by.length > 0) {
-                console.log(`[History] Setting read receipt for ${histMsg.id.substring(0,8)}:`, histMsg.read_by);
                 newMap.set(histMsg.id, new Set(histMsg.read_by));
               }
             });
-            console.log('[History] Total read receipts:', newMap.size);
             return newMap;
           });
           
@@ -264,25 +255,19 @@ export default function Chat() {
             markMessagesAsRead();
           }, 100);
         } else if (msg.type === 'message') {
-          console.log('[Chat] Adding message to state:', msg.id, msg.content);
-          setMessages((prev) => {
-            console.log('[Chat] Current messages count:', prev.length);
-            const newMessages = [...prev, {
-              id: msg.id,
-              sender_id: msg.sender_id,
-              sender_email: msg.sender_email,
-              sender_avatar: msg.sender_avatar,
-              content: msg.content,
-              image_url: msg.image_url,
-              reply_to_id: msg.reply_to_id,
-              reply_to_content: msg.reply_to_content,
-              reply_to_sender: msg.reply_to_sender,
-              created_at: msg.created_at,
-              read_by: msg.read_by || [], // Initialize with empty array
-            }];
-            console.log('[Chat] New messages count:', newMessages.length);
-            return newMessages;
-          });
+          setMessages((prev) => [...prev, {
+            id: msg.id,
+            sender_id: msg.sender_id,
+            sender_email: msg.sender_email,
+            sender_avatar: msg.sender_avatar,
+            content: msg.content,
+            image_url: msg.image_url,
+            reply_to_id: msg.reply_to_id,
+            reply_to_content: msg.reply_to_content,
+            reply_to_sender: msg.reply_to_sender,
+            created_at: msg.created_at,
+            read_by: msg.read_by || [],
+          }]);
           setTimeout(() => {
             scrollToBottom();
             markMessagesAsRead();
@@ -300,51 +285,31 @@ export default function Chat() {
         } else if (msg.type === 'online_users') {
           setOnlineUsers(msg.users || []);
         } else if (msg.type === 'read_receipt') {
-          console.log('[WS] Read receipt:', msg.message_id?.substring(0,8), 'by', msg.user_id?.substring(0,8));
-          
-          // Find the message to get sender_id
-          const targetMsg = messages().find(m => m.id === msg.message_id);
-          if (targetMsg) {
-            console.log('[WS] Message found! sender:', targetMsg.sender_id.substring(0,8), 'reader:', msg.user_id?.substring(0,8));
-          } else {
-            console.log('[WS] ⚠️ Message NOT found in state!');
-          }
-          
           setReadReceipts((prev) => {
             const newMap = new Map(prev);
             const existingReaders = newMap.get(msg.message_id);
-            // Create a NEW Set to trigger reactivity
             const readers: Set<string> = existingReaders ? new Set(existingReaders) : new Set();
             readers.add(msg.user_id);
             newMap.set(msg.message_id, readers);
-            console.log('[WS] Updated readers for', msg.message_id?.substring(0,8), ':', Array.from(readers).map(r => r.substring(0,8)));
             return newMap;
           });
-          // Increment version to force re-render
-          setReadReceiptsVersion(v => {
-            console.log('[WS] Version changed:', v, '->', v + 1);
-            return v + 1;
-          });
+          setReadReceiptsVersion(v => v + 1);
         } else if (msg.type === 'message_deleted') {
           setMessages((prev) => prev.filter(m => m.id !== msg.message_id));
         } else if (msg.type === 'message_edited') {
-          console.log('[WS] Message edited:', msg.message_id?.substring(0,8), 'new content:', msg.new_content);
           setMessages((prev) => prev.map(m => 
             m.id === msg.message_id 
               ? { ...m, content: msg.new_content, edited_at: msg.edited_at }
               : m
           ));
-          // If we're editing this message, clear edit state
           if (editingMessage()?.id === msg.message_id) {
             setEditingMessage(null);
             setEditInput('');
           }
         } else if (msg.type === 'reaction_added') {
-          console.log('[WS] Reaction added:', msg.emoji, 'to', msg.message_id?.substring(0,8));
           setMessages((prev) => prev.map(m => {
             if (m.id === msg.message_id) {
               const reactions = m.reactions || [];
-              // Check if this user already reacted with this emoji
               const existing = reactions.find(r => r.user_id === msg.user_id && r.emoji === msg.emoji);
               if (!existing) {
                 return {
@@ -361,7 +326,6 @@ export default function Chat() {
             return m;
           }));
         } else if (msg.type === 'reaction_removed') {
-          console.log('[WS] Reaction removed:', msg.emoji, 'from', msg.message_id?.substring(0,8));
           setMessages((prev) => prev.map(m => {
             if (m.id === msg.message_id) {
               const reactions = (m.reactions || []).filter(
@@ -372,22 +336,18 @@ export default function Chat() {
             return m;
           }));
         } else if (msg.type === 'call-offer') {
-          console.log('[WebRTC] Received call offer from', msg.callerUsername);
-          // Store offer for later acceptance
+          console.log('[WebRTC] Incoming call from', msg.callerUsername);
           (window as any).__pendingCallOffer = msg.offer;
           webrtcService.handleCallOffer(msg.offer, msg.callType, msg.sender_id, msg.callerUsername);
         } else if (msg.type === 'call-answer') {
-          console.log('[WebRTC] Received call answer');
+          console.log('[WebRTC] Call answered');
           webrtcService.handleCallAnswer(msg.answer);
         } else if (msg.type === 'call-ice-candidate') {
-          console.log('[WebRTC] Received ICE candidate');
           webrtcService.handleIceCandidate(msg.candidate);
         } else if (msg.type === 'call-rejected') {
-          console.log('[WebRTC] Call was rejected');
           alert('Call rejected');
           webrtcService.endCall();
         } else if (msg.type === 'call-ended') {
-          console.log('[WebRTC] Call ended by remote user');
           webrtcService.endCall();
         }
       } catch (e) {
@@ -401,9 +361,9 @@ export default function Chat() {
       myUserId = payload.sub || '';
     } catch {}
 
-    // Polling for new messages every 2 seconds as fallback
+    // Polling for new messages every 5 seconds as fallback (reduced frequency)
     const pollInterval = setInterval(async () => {
-      if (!token) return;
+      if (!token || status() !== 'connected') return;
       
       try {
         const lastMessageTime = messages().length > 0 
@@ -417,8 +377,6 @@ export default function Chat() {
         if (response.ok) {
           const newMessages = await response.json();
           if (newMessages && newMessages.length > 0) {
-            console.log('[Poll] Found', newMessages.length, 'new messages');
-            
             // Populate read receipts from polled messages
             let hasNewReceipts = false;
             setReadReceipts((prev) => {
@@ -438,7 +396,6 @@ export default function Chat() {
             // Show desktop notification for messages from others
             const messagesFromOthers = newMessages.filter((msg: Message) => msg.sender_id !== myUserId);
             if (messagesFromOthers.length > 0) {
-              // Show desktop notification for the latest message from others
               const latestMsg = messagesFromOthers[messagesFromOthers.length - 1];
               showDesktopNotification(
                 latestMsg.sender_email,
@@ -455,9 +412,9 @@ export default function Chat() {
           }
         }
       } catch (err) {
-        console.error('[Poll] Error fetching messages:', err);
+        // Silently fail - WebSocket is primary method
       }
-    }, 2000);
+    }, 5000);
 
     // Close context menu on scroll
     const handleScroll = () => {
