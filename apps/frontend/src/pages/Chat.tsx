@@ -244,6 +244,11 @@ export default function Chat() {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+        
+        // Log ALL messages for debugging
+        if (msg.type && msg.type.startsWith('call-')) {
+          console.log('[WebRTC] Message received:', msg.type, msg);
+        }
 
         if (msg.type === 'history') {
           const historyMessages = msg.messages || [];

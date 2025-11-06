@@ -762,18 +762,31 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         }
                         // WebRTC Call Signaling
                         ClientMsg::CallOffer { call_type, offer, target_user_id, caller_username } => {
-                            log::info!("[WebRTC] Call offer from {} to {}", self.user_email, target_user_id);
+                            log::info!("[WebRTC] Call offer from {} (ID: {}) to {} in room {}", 
+                                self.user_email, self.user_id, target_user_id, self.room_id);
                             let msg = ServerMsg::CallOffer {
                                 sender_id: self.user_id,
                                 target_user_id,
-                                call_type,
+                                call_type: call_type.clone(),
                                 offer,
                                 caller_username,
                             };
                             if let Ok(json) = serde_json::to_string(&msg) {
+                                log::info!("[WebRTC] Broadcasting offer to room {}: {}", self.room_id, &json[..json.len().min(200)]);
                                 if let Some(tx) = self.ws_state.txs.get(&self.room_id) {
-                                    let _ = tx.send(json);
+                                    match tx.send(json) {
+                                        Ok(receiver_count) => {
+                                            log::info!("[WebRTC] Offer broadcasted to {} receivers", receiver_count);
+                                        }
+                                        Err(e) => {
+                                            log::error!("[WebRTC] Failed to broadcast offer: {}", e);
+                                        }
+                                    }
+                                } else {
+                                    log::error!("[WebRTC] No broadcast channel found for room {}", self.room_id);
                                 }
+                            } else {
+                                log::error!("[WebRTC] Failed to serialize call offer");
                             }
                         }
                         ClientMsg::CallAnswer { answer, target_user_id } => {
