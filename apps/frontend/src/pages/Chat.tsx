@@ -98,6 +98,15 @@ export default function Chat() {
     
     myAvatar = localStorage.getItem('avatar_url') || '';
 
+    // Decode token to get user ID FIRST (needed for WebRTC filtering)
+    try {
+      const payload = JSON.parse(atob(token!.split('.')[1]));
+      myUserId = payload.sub || '';
+      console.log('[Chat] My User ID:', myUserId);
+    } catch (e) {
+      console.error('[Chat] Failed to decode token:', e);
+    }
+
     // Load pinned messages from localStorage
     try {
       const savedPins = localStorage.getItem(`pinned_${roomId}`);
@@ -340,31 +349,40 @@ export default function Chat() {
           }));
         } else if (msg.type === 'call-offer') {
           // Only handle if this message is for me
+          console.log('[WebRTC] Offer received - sender:', msg.sender_id, 'target:', msg.target_user_id, 'myId:', myUserId);
           if (msg.target_user_id === myUserId) {
-            console.log('[WebRTC] Incoming call from', msg.callerUsername);
+            console.log('[WebRTC] ✅ Incoming call from', msg.callerUsername);
             (window as any).__pendingCallOffer = msg.offer;
             webrtcService.handleCallOffer(msg.offer, msg.callType, msg.sender_id, msg.callerUsername);
+          } else {
+            console.log('[WebRTC] ❌ Offer not for me, ignoring');
           }
         } else if (msg.type === 'call-answer') {
           // Only handle if this message is for me
+          console.log('[WebRTC] Answer received - sender:', msg.sender_id, 'target:', msg.target_user_id, 'myId:', myUserId);
           if (msg.target_user_id === myUserId) {
-            console.log('[WebRTC] Call answered');
+            console.log('[WebRTC] ✅ Call answered');
             webrtcService.handleCallAnswer(msg.answer);
+          } else {
+            console.log('[WebRTC] ❌ Answer not for me, ignoring');
           }
         } else if (msg.type === 'call-ice-candidate') {
           // Only handle if this message is for me
           if (msg.target_user_id === myUserId) {
+            console.log('[WebRTC] ✅ ICE candidate received');
             webrtcService.handleIceCandidate(msg.candidate);
           }
         } else if (msg.type === 'call-rejected') {
           // Only handle if this message is for me
           if (msg.target_user_id === myUserId) {
+            console.log('[WebRTC] ✅ Call rejected');
             alert('Call rejected');
             webrtcService.endCall();
           }
         } else if (msg.type === 'call-ended') {
           // Only handle if this message is for me
           if (msg.target_user_id === myUserId) {
+            console.log('[WebRTC] ✅ Call ended by remote user');
             webrtcService.endCall();
           }
         }
@@ -372,12 +390,6 @@ export default function Chat() {
         console.error('[Chat] Parse error:', e);
       }
     };
-
-    // Decode token to get user ID for filtering self-typing
-    try {
-      const payload = JSON.parse(atob(token!.split('.')[1]));
-      myUserId = payload.sub || '';
-    } catch {}
 
     // Polling for new messages every 5 seconds as fallback (reduced frequency)
     const pollInterval = setInterval(async () => {
