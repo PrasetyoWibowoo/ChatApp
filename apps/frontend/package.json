@@ -25,6 +25,7 @@
     "yjs": "^13.6.15"
   },
   "devDependencies": {
+    "sharp": "^0.34.5",
     "typescript": "^5.6.3",
     "vite": "^5.4.8",
     "vite-plugin-solid": "^2.7.0"

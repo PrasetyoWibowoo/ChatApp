@@ -2,15 +2,33 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
     
     <!-- Title & Description -->
     <title>ChatApp - Realtime Chat Application</title>
     <meta name="description" content="Realtime chat application with collaborative features, message reactions, and email verification." />
     
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    
     <!-- Favicon & Logo -->
     <link rel="icon" type="image/png" href="/logo.png" />
-    <link rel="apple-touch-icon" href="/logo.png" />
+    
+    <!-- Apple Touch Icons (PWA Support) -->
+    <link rel="apple-touch-icon" href="/icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="72x72" href="/icon-72x72.png" />
+    <link rel="apple-touch-icon" sizes="96x96" href="/icon-96x96.png" />
+    <link rel="apple-touch-icon" sizes="128x128" href="/icon-128x128.png" />
+    <link rel="apple-touch-icon" sizes="144x144" href="/icon-144x144.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png" />
+    <link rel="apple-touch-icon" sizes="384x384" href="/icon-384x384.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png" />
+    
+    <!-- iOS Specific Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CollabNotes" />
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
@@ -24,8 +42,9 @@
     <meta property="twitter:title" content="ChatApp - Realtime Chat" />
     <meta property="twitter:description" content="Realtime chat application with collaborative features" />
     
-    <!-- Theme Color -->
-    <meta name="theme-color" content="#7c3aed" />
+    <!-- Theme Color (for PWA) -->
+    <meta name="theme-color" content="#3b82f6" />
+    <meta name="background-color" content="#0f172a" />
   </head>
   <body>
     <div id="root"></div>
