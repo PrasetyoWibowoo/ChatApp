@@ -71,6 +71,15 @@ class WebRTCService {
       this.peerConnection = new RTCPeerConnection(this.iceServers);
       console.log('[WebRTC] Peer connection created');
 
+      // Monitor connection state
+      this.peerConnection.onconnectionstatechange = () => {
+        console.log('[WebRTC] Connection state:', this.peerConnection?.connectionState);
+      };
+
+      this.peerConnection.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE connection state:', this.peerConnection?.iceConnectionState);
+      };
+
       // Add local stream tracks to peer connection
       this.localStream.getTracks().forEach(track => {
         console.log('[WebRTC] Adding track:', track.kind, track.label);
@@ -111,6 +120,8 @@ class WebRTCService {
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
       console.log('[WebRTC] Offer created and set as local description');
+      console.log('[WebRTC] Offer SDP includes video:', offer.sdp?.includes('m=video'));
+      console.log('[WebRTC] Offer SDP includes audio:', offer.sdp?.includes('m=audio'));
 
       // Send offer via WebSocket
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -219,6 +230,15 @@ class WebRTCService {
       // Create peer connection
       this.peerConnection = new RTCPeerConnection(this.iceServers);
 
+      // Monitor connection state
+      this.peerConnection.onconnectionstatechange = () => {
+        console.log('[WebRTC] (acceptCall) Connection state:', this.peerConnection?.connectionState);
+      };
+
+      this.peerConnection.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] (acceptCall) ICE connection state:', this.peerConnection?.iceConnectionState);
+      };
+
       // Add local stream tracks
       console.log('[WebRTC] (acceptCall) Adding local tracks to peer connection...');
       this.localStream.getTracks().forEach(track => {
@@ -262,6 +282,9 @@ class WebRTCService {
       // Create answer
       const answer = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(answer);
+      console.log('[WebRTC] (acceptCall) Answer created and set as local description');
+      console.log('[WebRTC] (acceptCall) Answer SDP includes video:', answer.sdp?.includes('m=video'));
+      console.log('[WebRTC] (acceptCall) Answer SDP includes audio:', answer.sdp?.includes('m=audio'));
 
       // Send answer via WebSocket
       if (this.ws) {
