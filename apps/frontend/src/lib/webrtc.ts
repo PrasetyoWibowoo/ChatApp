@@ -91,14 +91,17 @@ class WebRTCService {
 
       // Handle remote stream
       this.peerConnection.ontrack = (event) => {
-        console.log('[WebRTC] Received remote track:', event.track.kind);
+        console.log('[WebRTC] (startCall) Received remote track:', event.track.kind, 'id:', event.track.id, 'streams:', event.streams.length);
         this.remoteStream = event.streams[0];
+        console.log('[WebRTC] (startCall) Remote stream has', this.remoteStream.getTracks().length, 'tracks');
         setTimeout(() => {
           const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
           if (remoteVideo) {
             remoteVideo.srcObject = this.remoteStream;
             remoteVideo.play().catch(e => console.error('[WebRTC] Failed to play remote video:', e));
-            console.log('[WebRTC] Remote video attached and playing');
+            console.log('[WebRTC] (startCall) Remote video attached and playing');
+          } else {
+            console.error('[WebRTC] (startCall) remote-video element not found!');
           }
         }, 100);
       };
@@ -217,9 +220,13 @@ class WebRTCService {
       this.peerConnection = new RTCPeerConnection(this.iceServers);
 
       // Add local stream tracks
+      console.log('[WebRTC] (acceptCall) Adding local tracks to peer connection...');
       this.localStream.getTracks().forEach(track => {
-        this.peerConnection!.addTrack(track, this.localStream!);
+        console.log(`[WebRTC] (acceptCall) Adding ${track.kind} track:`, track.id, 'enabled:', track.enabled);
+        const sender = this.peerConnection!.addTrack(track, this.localStream!);
+        console.log('[WebRTC] (acceptCall) Track added, sender:', sender.track?.id);
       });
+      console.log('[WebRTC] (acceptCall) Total senders:', this.peerConnection.getSenders().length);
 
       // Handle ICE candidates
       this.peerConnection.onicecandidate = (event) => {
@@ -234,14 +241,17 @@ class WebRTCService {
 
       // Handle remote stream
       this.peerConnection.ontrack = (event) => {
-        console.log('[WebRTC] Received remote track:', event.track.kind);
+        console.log('[WebRTC] (acceptCall) Received remote track:', event.track.kind, 'id:', event.track.id, 'streams:', event.streams.length);
         this.remoteStream = event.streams[0];
+        console.log('[WebRTC] (acceptCall) Remote stream has', this.remoteStream.getTracks().length, 'tracks');
         setTimeout(() => {
           const remoteVideo = document.getElementById('remote-video') as HTMLVideoElement;
           if (remoteVideo) {
             remoteVideo.srcObject = this.remoteStream;
             remoteVideo.play().catch(e => console.error('[WebRTC] Failed to play remote video:', e));
-            console.log('[WebRTC] Remote video attached and playing');
+            console.log('[WebRTC] (acceptCall) Remote video attached and playing');
+          } else {
+            console.error('[WebRTC] (acceptCall) remote-video element not found!');
           }
         }, 100);
       };
