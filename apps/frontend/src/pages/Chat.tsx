@@ -5,6 +5,11 @@ import { SmileIcon, ImageIcon, SendIcon, LinkIcon, CheckIcon, CheckDoubleIcon, R
 import { getDisplayName, getInitials } from '../lib/displayName';
 import { webrtcService } from '../lib/webrtc';
 
+// Preload notification sound
+const notificationAudio = new Audio('/notification/notification.mp3');
+notificationAudio.volume = 0.5;
+notificationAudio.preload = 'auto';
+
 function getApiBaseUrl() {
   const hostname = window.location.hostname;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
@@ -272,6 +277,11 @@ export default function Chat() {
             markMessagesAsRead();
           }, 100);
         } else if (msg.type === 'message') {
+          // Play sound for new messages from others
+          if (msg.sender_id !== myUserId) {
+            playNotificationSound();
+          }
+          
           setMessages((prev) => [...prev, {
             id: msg.id,
             sender_id: msg.sender_id,
@@ -855,7 +865,24 @@ export default function Chat() {
     }, 100);
   };
 
+  // Play notification sound
+  const playNotificationSound = () => {
+    try {
+      // Clone the audio to allow multiple plays
+      const audio = notificationAudio.cloneNode(true) as HTMLAudioElement;
+      audio.volume = 0.5;
+      audio.play().catch(err => {
+        console.log('[Notification] Sound play failed (may need user interaction):', err.message);
+      });
+    } catch (err) {
+      console.error('[Notification] Failed to play audio:', err);
+    }
+  };
+
   const showDesktopNotification = (senderEmail: string, message: string, messageId: string) => {
+    // Play notification sound (regardless of tab visibility)
+    playNotificationSound();
+    
     // Only show notification if user is not viewing the page
     if (!document.hidden) return;
     
@@ -867,8 +894,8 @@ export default function Chat() {
         
         const notification = new Notification(`💬 ${senderEmail}`, {
           body: message.length > 100 ? message.substring(0, 100) + '...' : message,
-          icon: '/icon-notification.svg',
-          badge: '/icon-notification.svg',
+          icon: '/icon-192x192.png',
+          badge: '/icon-72x72.png',
           tag: `chat-${roomId}-${messageId}`, // Prevent duplicate notifications
           requireInteraction: false,
           silent: true, // We play our own sound
