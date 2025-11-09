@@ -4,7 +4,7 @@ import CallInterface from '../components/CallInterface';
 import { SmileIcon, ImageIcon, SendIcon, LinkIcon, CheckIcon, CheckDoubleIcon, ReplyIcon, TrashIcon, SearchIcon, EditIcon, PhoneIcon, VideoIcon } from '../components/Icons';
 import { getDisplayName, getInitials } from '../lib/displayName';
 import { webrtcService } from '../lib/webrtc';
-import { playNotificationSound, showMessageNotification, ensureNotificationPermission, cleanupGlobalNotifications } from '../lib/notifications';
+import { playNotificationSound, showMessageNotification, ensureNotificationPermission, updateCurrentRoom } from '../lib/notifications';
 
 function getApiBaseUrl() {
   const hostname = window.location.hostname;
@@ -126,8 +126,9 @@ export default function Chat() {
       }
     });
 
-    // Cleanup global notifications when entering chat (chat has its own WS)
-    cleanupGlobalNotifications();
+    // Update current room for global notifications (don't show notif for this room)
+    updateCurrentRoom(roomId);
+    console.log('[Chat] Current room set to:', roomId);
 
     // Save room to localStorage for "My Rooms" list
     const saveRoomToList = () => {
@@ -467,6 +468,8 @@ export default function Chat() {
       messagesContainer?.removeEventListener('scroll', handleScroll);
       const timer = longPressTimer();
       if (timer) clearTimeout(timer);
+      // Reset current room when leaving
+      updateCurrentRoom(undefined);
     });
   });
 

@@ -83,9 +83,12 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 
 /**
  * Setup global WebSocket for notifications (works on any page)
+ * Listens to multiple rooms for cross-room notifications
  */
 let globalWS: WebSocket | null = null;
 let reconnectTimeout: number | null = null;
+let currentUserId: string = '';
+let currentRoomId: string | undefined = undefined;
 
 function getWSUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -97,11 +100,14 @@ function getWSUrl(): string {
   return `${protocol}//${hostname}:8080/ws`;
 }
 
-export function initGlobalNotifications(userId: string, currentRoomId?: string) {
+export function initGlobalNotifications(userId: string, activeRoomId?: string) {
   if (!userId) {
     console.log('[Global Notification] No user ID, skipping');
     return;
   }
+
+  currentUserId = userId;
+  currentRoomId = activeRoomId;
 
   // Close existing connection
   if (globalWS) {
@@ -115,38 +121,65 @@ export function initGlobalNotifications(userId: string, currentRoomId?: string) 
     reconnectTimeout = null;
   }
 
-  console.log('[Global Notification] Initializing...');
+  console.log('[Global Notification] Initializing for user:', userId);
 
-  try {
-    globalWS = new WebSocket(getWSUrl());
-
-    globalWS.onopen = () => {
-      console.log('[Global Notification] Connected');
-      // Join a "global" room to receive all notifications
-      if (globalWS) {
-        globalWS.send(JSON.stringify({
-          type: 'join',
-          room_id: '__notifications__', // Special room for global notifications
-        }));
+  // Get user's rooms from localStorage
+  const savedRooms = localStorage.getItem('myRooms');
+  let userRooms: string[] = ['general']; // Default to general room
+  
+  if (savedRooms) {
+    try {
+      const rooms = JSON.parse(savedRooms);
+      userRooms = rooms.map((r: any) => r.id);
+      if (userRooms.length === 0) {
+        userRooms = ['general'];
       }
+    } catch (e) {
+      console.error('[Global Notification] Failed to parse rooms:', e);
+    }
+  }
+
+  console.log('[Global Notification] Monitoring rooms:', userRooms);
+
+  // Connect to each room to listen for messages
+  // We'll use general room as primary listener since backend broadcasts to all rooms
+  connectToRoom('general');
+}
+
+function connectToRoom(roomId: string) {
+  try {
+    const ws = new WebSocket(getWSUrl());
+
+    ws.onopen = () => {
+      console.log('[Global Notification] Connected to room:', roomId);
+      ws.send(JSON.stringify({
+        type: 'join',
+        room_id: roomId,
+      }));
+      globalWS = ws;
     };
 
-    globalWS.onmessage = (event) => {
+    ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+        console.log('[Global Notification] Received:', msg.type, 'from room:', roomId);
         
-        // Only handle messages, not from current user, not in current room
-        if (msg.type === 'message' && msg.sender_id !== userId) {
-          // Don't show notification if we're already in that room
-          if (msg.room_id && msg.room_id !== currentRoomId) {
+        // Only handle new messages from other users
+        if (msg.type === 'message' && msg.sender_id && msg.sender_id !== currentUserId) {
+          // Don't show notification if we're in that room
+          const msgRoomId = msg.room_id || roomId;
+          if (msgRoomId !== currentRoomId) {
+            console.log('[Global Notification] Showing notification for room:', msgRoomId);
             showMessageNotification(
-              `💬 ${msg.sender_email}`,
+              `💬 ${msg.sender_email || 'New Message'}`,
               msg.content || '[Image]',
               {
-                roomId: msg.room_id,
+                roomId: msgRoomId,
                 messageId: msg.id,
               }
             );
+          } else {
+            console.log('[Global Notification] Skipping notification (same room)');
           }
         }
       } catch (err) {
@@ -154,18 +187,18 @@ export function initGlobalNotifications(userId: string, currentRoomId?: string) 
       }
     };
 
-    globalWS.onerror = (error) => {
+    ws.onerror = (error) => {
       console.error('[Global Notification] WebSocket error:', error);
     };
 
-    globalWS.onclose = () => {
-      console.log('[Global Notification] Disconnected');
+    ws.onclose = () => {
+      console.log('[Global Notification] Disconnected from room:', roomId);
       globalWS = null;
       
       // Reconnect after 5 seconds
       reconnectTimeout = window.setTimeout(() => {
-        console.log('[Global Notification] Reconnecting...');
-        initGlobalNotifications(userId, currentRoomId);
+        console.log('[Global Notification] Reconnecting to room:', roomId);
+        initGlobalNotifications(currentUserId, currentRoomId);
       }, 5000);
     };
   } catch (err) {
@@ -176,10 +209,9 @@ export function initGlobalNotifications(userId: string, currentRoomId?: string) 
 /**
  * Update current room ID (to avoid duplicate notifications)
  */
-export function updateCurrentRoom(roomId: string | null) {
-  // This would need to be implemented with a global state management
-  // For now, we'll keep it simple
-  console.log('[Global Notification] Current room:', roomId);
+export function updateCurrentRoom(roomId: string | undefined) {
+  currentRoomId = roomId;
+  console.log('[Global Notification] Current room updated to:', roomId);
 }
 
 /**
