@@ -73,7 +73,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 /**
- * Show a local notification
+ * Show a local notification (works even when app is closed)
  */
 export function showNotification(title: string, options?: NotificationOptions) {
   if (Notification.permission === 'granted') {
@@ -84,10 +84,13 @@ export function showNotification(title: string, options?: NotificationOptions) {
       ...options,
     };
 
+    // Try to use service worker notification first (works in background)
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      // Use service worker notification (works in background)
       navigator.serviceWorker.ready.then((registration) => {
         registration.showNotification(title, defaultOptions);
+      }).catch(() => {
+        // Fallback to regular notification
+        new Notification(title, defaultOptions);
       });
     } else {
       // Fallback to regular notification

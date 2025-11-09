@@ -123,14 +123,43 @@ self.addEventListener('sync', (event) => {
 
 // Push notifications
 self.addEventListener('push', (event) => {
-  const options = {
-    body: event.data ? event.data.text() : 'New message',
+  console.log('[Service Worker] Push notification received:', event);
+  
+  let notificationData = {
+    title: 'Collaboration Notes',
+    body: 'New message',
     icon: '/icon-192x192.png',
     badge: '/icon-72x72.png',
+  };
+
+  // Try to parse push data
+  if (event.data) {
+    try {
+      const data = event.data.json();
+      notificationData = {
+        title: data.title || `💬 ${data.sender || 'New Message'}`,
+        body: data.message || data.body || 'You have a new message',
+        icon: data.icon || '/icon-192x192.png',
+        badge: '/icon-72x72.png',
+        tag: data.tag || 'chat-notification',
+        data: data.data || {},
+        requireInteraction: false,
+        vibrate: [200, 100, 200],
+      };
+    } catch (e) {
+      console.error('[Service Worker] Failed to parse push data:', e);
+      notificationData.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: notificationData.body,
+    icon: notificationData.icon,
+    badge: notificationData.badge,
     vibrate: [200, 100, 200],
-    tag: 'chat-notification',
+    tag: notificationData.tag || 'chat-notification',
     requireInteraction: false,
-    data: {
+    data: notificationData.data || {
       dateOfArrival: Date.now(),
       primaryKey: 1
     },
@@ -149,7 +178,7 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification('Collaboration Notes', options)
+    self.registration.showNotification(notificationData.title, options)
   );
 });
 

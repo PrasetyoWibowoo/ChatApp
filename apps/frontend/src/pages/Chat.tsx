@@ -4,11 +4,7 @@ import CallInterface from '../components/CallInterface';
 import { SmileIcon, ImageIcon, SendIcon, LinkIcon, CheckIcon, CheckDoubleIcon, ReplyIcon, TrashIcon, SearchIcon, EditIcon, PhoneIcon, VideoIcon } from '../components/Icons';
 import { getDisplayName, getInitials } from '../lib/displayName';
 import { webrtcService } from '../lib/webrtc';
-
-// Preload notification sound
-const notificationAudio = new Audio('/notification/notification.mp3');
-notificationAudio.volume = 0.5;
-notificationAudio.preload = 'auto';
+import { playNotificationSound, showMessageNotification, ensureNotificationPermission, cleanupGlobalNotifications } from '../lib/notifications';
 
 function getApiBaseUrl() {
   const hostname = window.location.hostname;
@@ -124,19 +120,14 @@ export default function Chat() {
     }
 
     // Request notification permission
-    const requestNotificationPermission = async () => {
-      if ('Notification' in window && Notification.permission === 'default') {
-        try {
-          const permission = await Notification.requestPermission();
-          console.log('[Notification] Permission:', permission);
-        } catch (err) {
-          console.error('[Notification] Failed to request permission:', err);
-        }
+    ensureNotificationPermission().then(granted => {
+      if (granted) {
+        console.log('[Chat] Notification permission granted');
       }
-    };
-    
-    // Request on first interaction
-    document.addEventListener('click', requestNotificationPermission, { once: true });
+    });
+
+    // Cleanup global notifications when entering chat (chat has its own WS)
+    cleanupGlobalNotifications();
 
     // Save room to localStorage for "My Rooms" list
     const saveRoomToList = () => {
@@ -865,63 +856,17 @@ export default function Chat() {
     }, 100);
   };
 
-  // Play notification sound
-  const playNotificationSound = () => {
-    try {
-      // Clone the audio to allow multiple plays
-      const audio = notificationAudio.cloneNode(true) as HTMLAudioElement;
-      audio.volume = 0.5;
-      audio.play().catch(err => {
-        console.log('[Notification] Sound play failed (may need user interaction):', err.message);
-      });
-    } catch (err) {
-      console.error('[Notification] Failed to play audio:', err);
-    }
-  };
-
   const showDesktopNotification = (senderEmail: string, message: string, messageId: string) => {
-    // Play notification sound (regardless of tab visibility)
-    playNotificationSound();
-    
-    // Only show notification if user is not viewing the page
-    if (!document.hidden) return;
-    
-    if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        const roomName = roomId === 'general' ? 'General Chat' : 
-                         roomId === 'team' ? 'Team Chat' :
-                         roomId === 'support' ? 'Support' : roomId;
-        
-        const notification = new Notification(`💬 ${senderEmail}`, {
-          body: message.length > 100 ? message.substring(0, 100) + '...' : message,
-          icon: '/icon-192x192.png',
-          badge: '/icon-72x72.png',
-          tag: `chat-${roomId}-${messageId}`, // Prevent duplicate notifications
-          requireInteraction: false,
-          silent: true, // We play our own sound
-          data: { roomId, messageId },
-        });
-        
-        notification.onclick = () => {
-          window.focus();
-          notification.close();
-          // Scroll to the message
-          setTimeout(() => {
-            const element = document.getElementById(`msg-${messageId}`);
-            if (element) {
-              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }, 100);
-        };
-        
-        // Auto-close after 5 seconds
-        setTimeout(() => notification.close(), 5000);
-        
-        console.log('[Notification] Desktop notification shown');
-      } catch (err) {
-        console.error('[Notification] Failed to show:', err);
+    // Use global notification service
+    showMessageNotification(
+      `💬 ${senderEmail}`,
+      message,
+      {
+        roomId,
+        messageId,
+        silent: !document.hidden, // Don't play sound if tab is visible (already playing)
       }
-    }
+    );
   };
 
   const deleteMessage = (messageId: string) => {

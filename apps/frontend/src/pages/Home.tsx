@@ -1,5 +1,6 @@
-import { createSignal, onMount, For } from 'solid-js';
+import { createSignal, onMount, onCleanup, For } from 'solid-js';
 import { GlobeIcon, PlusIcon, MessageIcon, BriefcaseIcon, HelpIcon } from '../components/Icons';
+import { initGlobalNotifications, cleanupGlobalNotifications, ensureNotificationPermission } from '../lib/notifications';
 
 interface Room {
   id: string;
@@ -17,9 +18,11 @@ export default function Home() {
   }
 
   let email = 'User';
+  let userId = '';
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
     email = payload.email || 'User';
+    userId = payload.sub || '';
   } catch (e) {
     console.error('Failed to decode token', e);
     localStorage.removeItem('token');
@@ -68,12 +71,29 @@ export default function Home() {
       }
     }
     
+    // Request notification permission
+    ensureNotificationPermission().then(granted => {
+      if (granted) {
+        console.log('[Home] Notification permission granted');
+        // Initialize global notifications for all rooms
+        initGlobalNotifications(userId, undefined); // undefined = not in any specific room
+      }
+    });
+    
     // Fetch unread counts
     fetchUnreadCounts();
     
     // Poll unread counts every 5 seconds
     const interval = setInterval(fetchUnreadCounts, 5000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  });
+
+  onCleanup(() => {
+    // Cleanup global notifications when leaving home
+    cleanupGlobalNotifications();
   });
 
   const logout = () => {
