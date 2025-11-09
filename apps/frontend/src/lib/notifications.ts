@@ -100,8 +100,8 @@ export async function ensureNotificationPermission(): Promise<boolean> {
  * Setup global WebSocket for notifications (works on any page)
  * Listens to multiple rooms for cross-room notifications
  */
-let globalWS: WebSocket | null = null;
-let reconnectTimeout: number | null = null;
+let globalWSConnections: Map<string, WebSocket> = new Map();
+let reconnectTimeouts: Map<string, number> = new Map();
 let currentUserId: string = '';
 let currentRoomId: string | undefined = undefined;
 
@@ -142,17 +142,18 @@ export function initGlobalNotifications(userId: string, activeRoomId?: string) {
   currentUserId = userId;
   currentRoomId = activeRoomId;
 
-  // Close existing connection
-  if (globalWS) {
-    globalWS.close();
-    globalWS = null;
-  }
+  // Close existing connections
+  globalWSConnections.forEach((ws, roomId) => {
+    ws.close();
+    console.log('[Global Notification] Closed connection to room:', roomId);
+  });
+  globalWSConnections.clear();
 
-  // Clear reconnect timeout
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout);
-    reconnectTimeout = null;
-  }
+  // Clear reconnect timeouts
+  reconnectTimeouts.forEach((timeout, roomId) => {
+    clearTimeout(timeout);
+  });
+  reconnectTimeouts.clear();
 
   console.log('[Global Notification] Initializing for user:', userId);
 
@@ -174,9 +175,10 @@ export function initGlobalNotifications(userId: string, activeRoomId?: string) {
 
   console.log('[Global Notification] Monitoring rooms:', userRooms);
 
-  // Connect to each room to listen for messages
-  // We'll use general room as primary listener since backend broadcasts to all rooms
-  connectToRoom('general');
+  // Connect to all rooms to listen for messages
+  userRooms.forEach(roomId => {
+    connectToRoom(roomId);
+  });
 }
 
 function connectToRoom(roomId: string) {
@@ -197,7 +199,7 @@ function connectToRoom(roomId: string) {
         type: 'join',
         room_id: roomId,
       }));
-      globalWS = ws;
+      globalWSConnections.set(roomId, ws);
     };
 
     ws.onmessage = (event) => {
@@ -250,13 +252,21 @@ function connectToRoom(roomId: string) {
 
     ws.onclose = () => {
       console.log('[Global Notification] Disconnected from room:', roomId);
-      globalWS = null;
+      globalWSConnections.delete(roomId);
+      
+      // Clear existing reconnect timeout for this room
+      const existingTimeout = reconnectTimeouts.get(roomId);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
       
       // Reconnect after 5 seconds
-      reconnectTimeout = window.setTimeout(() => {
+      const timeout = window.setTimeout(() => {
         console.log('[Global Notification] Reconnecting to room:', roomId);
-        initGlobalNotifications(currentUserId, currentRoomId);
+        reconnectTimeouts.delete(roomId);
+        connectToRoom(roomId);
       }, 5000);
+      reconnectTimeouts.set(roomId, timeout);
     };
   } catch (err) {
     console.error('[Global Notification] Failed to create WebSocket:', err);
@@ -275,15 +285,20 @@ export function updateCurrentRoom(roomId: string | undefined) {
  * Cleanup global notifications
  */
 export function cleanupGlobalNotifications() {
-  if (globalWS) {
-    globalWS.close();
-    globalWS = null;
-  }
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout);
-    reconnectTimeout = null;
-  }
-  console.log('[Global Notification] Cleaned up');
+  // Close all WebSocket connections
+  globalWSConnections.forEach((ws, roomId) => {
+    ws.close();
+    console.log('[Global Notification] Closed connection to room:', roomId);
+  });
+  globalWSConnections.clear();
+  
+  // Clear all reconnect timeouts
+  reconnectTimeouts.forEach((timeout, roomId) => {
+    clearTimeout(timeout);
+  });
+  reconnectTimeouts.clear();
+  
+  console.log('[Global Notification] Cleaned up all connections');
 }
 
 /**
