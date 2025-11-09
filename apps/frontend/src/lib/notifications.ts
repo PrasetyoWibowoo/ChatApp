@@ -109,15 +109,20 @@ function getWSUrl(): string {
   // Use Railway backend URL from environment variable
   const apiUrl = import.meta.env.VITE_API_URL as string;
   
+  console.log('[Global Notification] API URL from env:', apiUrl);
+  
   if (apiUrl) {
     // Convert http(s) URL to ws(s) URL
     const wsUrl = apiUrl.replace(/^http/, 'ws');
+    console.log('[Global Notification] WebSocket URL:', wsUrl + '/ws');
     return `${wsUrl}/ws`;
   }
   
   // Fallback to localhost for development
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//localhost:8080/ws`;
+  const fallbackUrl = `${protocol}//localhost:8080/ws`;
+  console.log('[Global Notification] Using fallback WebSocket URL:', fallbackUrl);
+  return fallbackUrl;
 }
 
 export function initGlobalNotifications(userId: string, activeRoomId?: string) {

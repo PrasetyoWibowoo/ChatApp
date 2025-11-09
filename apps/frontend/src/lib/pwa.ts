@@ -170,3 +170,39 @@ export function monitorNetworkStatus() {
     });
   });
 }
+
+/**
+ * Get PWA and notification status for debugging
+ */
+export async function getPWAStatus() {
+  const status = {
+    serviceWorkerSupported: 'serviceWorker' in navigator,
+    serviceWorkerRegistered: false,
+    serviceWorkerActive: false,
+    notificationSupported: 'Notification' in window,
+    notificationPermission: 'Notification' in window ? Notification.permission : 'not-supported',
+    isPWA: isPWA(),
+    isOnline: navigator.onLine,
+  };
+
+  if ('serviceWorker' in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      status.serviceWorkerRegistered = !!registration;
+      status.serviceWorkerActive = !!registration?.active;
+    } catch (e) {
+      console.error('[PWA] Failed to get SW registration:', e);
+    }
+  }
+
+  return status;
+}
+
+// Expose to window for debugging
+if (typeof window !== 'undefined') {
+  (window as any).getPWAStatus = async () => {
+    const status = await getPWAStatus();
+    console.table(status);
+    return status;
+  };
+}

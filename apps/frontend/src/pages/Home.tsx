@@ -69,11 +69,16 @@ export default function Home() {
     }
     
     // Request notification permission
+    console.log('[Home] User ID:', userId.substring(0, 8), 'Requesting notification permission...');
     ensureNotificationPermission().then(granted => {
+      console.log('[Home] Notification permission result:', granted);
       if (granted) {
-        console.log('[Home] Notification permission granted');
+        console.log('[Home] Initializing global notifications for user:', userId.substring(0, 8));
         // Initialize global notifications for all rooms
         initGlobalNotifications(userId, undefined); // undefined = not in any specific room
+      } else {
+        console.warn('[Home] Notification permission denied - notifications will not work');
+        alert('⚠️ Notification permission diperlukan untuk menerima notifikasi pesan baru!\n\nSilakan klik "Allow" atau "Izinkan" saat browser meminta permission.');
       }
     });
     
