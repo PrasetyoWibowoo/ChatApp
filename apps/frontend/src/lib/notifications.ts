@@ -106,13 +106,18 @@ let currentUserId: string = '';
 let currentRoomId: string | undefined = undefined;
 
 function getWSUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const hostname = window.location.hostname;
+  // Use Railway backend URL from environment variable
+  const apiUrl = import.meta.env.VITE_API_URL as string;
   
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return `${protocol}//${hostname}:8080/ws`;
+  if (apiUrl) {
+    // Convert http(s) URL to ws(s) URL
+    const wsUrl = apiUrl.replace(/^http/, 'ws');
+    return `${wsUrl}/ws`;
   }
-  return `${protocol}//${hostname}:8080/ws`;
+  
+  // Fallback to localhost for development
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//localhost:8080/ws`;
 }
 
 export function initGlobalNotifications(userId: string, activeRoomId?: string) {

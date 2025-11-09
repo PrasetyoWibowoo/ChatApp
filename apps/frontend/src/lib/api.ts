@@ -13,17 +13,8 @@ const getApiBaseUrl = () => {
     return url;
   }
   
-  // Use the same hostname as frontend but port 8080
-  // This ensures localhost->localhost and IP->IP
-  const protocol = window.location.protocol;
-  const hostname = window.location.hostname;
-  
-  // Special case: if hostname is empty or localhost variants, ensure localhost
-  if (!hostname || hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:8080';
-  }
-  
-  return `${protocol}//${hostname}:8080`;
+  // Fallback to localhost for development
+  return 'http://localhost:8080';
 };
 
 const api = axios.create({ baseURL: getApiBaseUrl() });

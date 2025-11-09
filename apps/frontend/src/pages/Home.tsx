@@ -35,11 +35,8 @@ export default function Home() {
   const [unreadCounts, setUnreadCounts] = createSignal<Record<string, number>>({});
 
   const getApiBaseUrl = () => {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:8080';
-    }
-    return `http://${hostname}:8080`;
+    const apiUrl = import.meta.env.VITE_API_URL as string;
+    return apiUrl || 'http://localhost:8080';
   };
 
   const fetchUnreadCounts = async () => {

@@ -7,11 +7,8 @@ import { webrtcService } from '../lib/webrtc';
 import { playNotificationSound, showMessageNotification, ensureNotificationPermission, updateCurrentRoom } from '../lib/notifications';
 
 function getApiBaseUrl() {
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:8080';
-  }
-  return `http://${hostname}:8080`;
+  const apiUrl = import.meta.env.VITE_API_URL as string;
+  return apiUrl || 'http://localhost:8080';
 }
 
 interface MessageReaction {
@@ -156,18 +153,10 @@ export default function Chat() {
     
     saveRoomToList();
 
-    // Auto-detect API base from current hostname
+    // Use Railway backend URL from environment variable
     const getApiBase = () => {
-      if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL as string;
-      const protocol = window.location.protocol;
-      const hostname = window.location.hostname;
-      
-      // Ensure localhost stays localhost
-      if (!hostname || hostname === 'localhost' || hostname === '127.0.0.1') {
-        return 'http://localhost:8080';
-      }
-      
-      return `${protocol}//${hostname}:8080`;
+      const apiUrl = import.meta.env.VITE_API_URL as string;
+      return apiUrl || 'http://localhost:8080';
     };
     
     const apiBase = getApiBase();
