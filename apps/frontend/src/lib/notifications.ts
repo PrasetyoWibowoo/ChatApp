@@ -38,11 +38,24 @@ export function showMessageNotification(
     silent?: boolean;
   }
 ) {
+  console.log('[showMessageNotification] Called with:', { title, body, options });
+  
   // Play sound unless silent
   if (!options?.silent) {
+    console.log('[showMessageNotification] Playing sound...');
     playNotificationSound();
+  } else {
+    console.log('[showMessageNotification] Sound skipped (silent mode)');
   }
 
+  // Check permission first
+  if (Notification.permission !== 'granted') {
+    console.warn('[showMessageNotification] Permission not granted:', Notification.permission);
+    return;
+  }
+
+  console.log('[showMessageNotification] Showing notification via PWA...');
+  
   // Show notification via PWA (works in background)
   showPWANotification(title, {
     body: body.length > 100 ? body.substring(0, 100) + '...' : body,
@@ -57,6 +70,8 @@ export function showMessageNotification(
       timestamp: Date.now(),
     },
   });
+  
+  console.log('[showMessageNotification] Notification request sent');
 }
 
 /**
@@ -162,14 +177,25 @@ function connectToRoom(roomId: string) {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        console.log('[Global Notification] Received:', msg.type, 'from room:', roomId);
+        console.log('[Global Notification] Received message:', {
+          type: msg.type,
+          room: roomId,
+          sender_id: msg.sender_id?.substring(0, 8),
+          content_preview: msg.content?.substring(0, 30),
+          currentUserId: currentUserId?.substring(0, 8),
+          currentRoomId: currentRoomId
+        });
         
         // Only handle new messages from other users
         if (msg.type === 'message' && msg.sender_id && msg.sender_id !== currentUserId) {
+          console.log('[Global Notification] Message from other user detected');
+          
           // Don't show notification if we're in that room
           const msgRoomId = msg.room_id || roomId;
+          console.log('[Global Notification] Comparing rooms:', { msgRoomId, currentRoomId });
+          
           if (msgRoomId !== currentRoomId) {
-            console.log('[Global Notification] Showing notification for room:', msgRoomId);
+            console.log('[Global Notification] ✅ Different room - Showing notification');
             showMessageNotification(
               `💬 ${msg.sender_email || 'New Message'}`,
               msg.content || '[Image]',
@@ -179,8 +205,13 @@ function connectToRoom(roomId: string) {
               }
             );
           } else {
-            console.log('[Global Notification] Skipping notification (same room)');
+            console.log('[Global Notification] ❌ Same room - Skipping notification');
           }
+        } else if (msg.type === 'message') {
+          console.log('[Global Notification] Message skipped:', {
+            reason: msg.sender_id === currentUserId ? 'own message' : 'no sender_id',
+            sender_id: msg.sender_id?.substring(0, 8)
+          });
         }
       } catch (err) {
         console.error('[Global Notification] Failed to parse message:', err);
@@ -227,4 +258,43 @@ export function cleanupGlobalNotifications() {
     reconnectTimeout = null;
   }
   console.log('[Global Notification] Cleaned up');
+}
+
+/**
+ * Test notification from console
+ * Usage: window.testNotification()
+ */
+export function testNotification() {
+  console.log('[Test] Permission:', Notification.permission);
+  
+  if (Notification.permission !== 'granted') {
+    console.error('[Test] Please grant notification permission first');
+    Notification.requestPermission().then(permission => {
+      console.log('[Test] Permission result:', permission);
+    });
+    return;
+  }
+  
+  console.log('[Test] Showing test notification...');
+  showMessageNotification(
+    '🧪 Test Notification',
+    'This is a test message from console',
+    {
+      roomId: 'test',
+      messageId: 'test-' + Date.now(),
+    }
+  );
+  console.log('[Test] Test notification triggered');
+}
+
+// Expose to window for debugging
+if (typeof window !== 'undefined') {
+  (window as any).testNotification = testNotification;
+  (window as any).checkNotificationPermission = () => {
+    console.log('Notification.permission:', Notification.permission);
+    console.log('Service Worker:', 'serviceWorker' in navigator ? 'supported' : 'not supported');
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      console.log('Service Worker controller:', navigator.serviceWorker.controller.state);
+    }
+  };
 }
