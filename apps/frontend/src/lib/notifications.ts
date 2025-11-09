@@ -111,18 +111,25 @@ function getWSUrl(roomId: string): string {
   
   console.log('[Global Notification] API URL from env:', apiUrl);
   
+  // Get JWT token from localStorage
+  const token = localStorage.getItem('token');
+  if (!token) {
+    console.error('[Global Notification] No token found - cannot connect WebSocket');
+    return '';
+  }
+  
   if (apiUrl) {
     // Convert http(s) URL to ws(s) URL
     const wsUrl = apiUrl.replace(/^http/, 'ws');
-    const fullUrl = `${wsUrl}/ws/rooms/${roomId}`;
-    console.log('[Global Notification] WebSocket URL:', fullUrl);
+    const fullUrl = `${wsUrl}/ws/rooms/${roomId}?token=${token}`;
+    console.log('[Global Notification] WebSocket URL:', fullUrl.replace(token, 'TOKEN_HIDDEN'));
     return fullUrl;
   }
   
   // Fallback to localhost for development
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const fallbackUrl = `${protocol}//localhost:8080/ws/rooms/${roomId}`;
-  console.log('[Global Notification] Using fallback WebSocket URL:', fallbackUrl);
+  const fallbackUrl = `${protocol}//localhost:8080/ws/rooms/${roomId}?token=${token}`;
+  console.log('[Global Notification] Using fallback WebSocket URL:', fallbackUrl.replace(token, 'TOKEN_HIDDEN'));
   return fallbackUrl;
 }
 
@@ -174,7 +181,15 @@ export function initGlobalNotifications(userId: string, activeRoomId?: string) {
 
 function connectToRoom(roomId: string) {
   try {
-    const ws = new WebSocket(getWSUrl(roomId));
+    const wsUrl = getWSUrl(roomId);
+    
+    // Check if token exists
+    if (!wsUrl) {
+      console.error('[Global Notification] Cannot connect - no valid WebSocket URL (missing token?)');
+      return;
+    }
+    
+    const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       console.log('[Global Notification] Connected to room:', roomId);
