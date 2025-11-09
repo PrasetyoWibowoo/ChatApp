@@ -105,7 +105,7 @@ let reconnectTimeout: number | null = null;
 let currentUserId: string = '';
 let currentRoomId: string | undefined = undefined;
 
-function getWSUrl(): string {
+function getWSUrl(roomId: string): string {
   // Use Railway backend URL from environment variable
   const apiUrl = import.meta.env.VITE_API_URL as string;
   
@@ -114,13 +114,14 @@ function getWSUrl(): string {
   if (apiUrl) {
     // Convert http(s) URL to ws(s) URL
     const wsUrl = apiUrl.replace(/^http/, 'ws');
-    console.log('[Global Notification] WebSocket URL:', wsUrl + '/ws');
-    return `${wsUrl}/ws`;
+    const fullUrl = `${wsUrl}/ws/rooms/${roomId}`;
+    console.log('[Global Notification] WebSocket URL:', fullUrl);
+    return fullUrl;
   }
   
   // Fallback to localhost for development
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const fallbackUrl = `${protocol}//localhost:8080/ws`;
+  const fallbackUrl = `${protocol}//localhost:8080/ws/rooms/${roomId}`;
   console.log('[Global Notification] Using fallback WebSocket URL:', fallbackUrl);
   return fallbackUrl;
 }
@@ -173,7 +174,7 @@ export function initGlobalNotifications(userId: string, activeRoomId?: string) {
 
 function connectToRoom(roomId: string) {
   try {
-    const ws = new WebSocket(getWSUrl());
+    const ws = new WebSocket(getWSUrl(roomId));
 
     ws.onopen = () => {
       console.log('[Global Notification] Connected to room:', roomId);
