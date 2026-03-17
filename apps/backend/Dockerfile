@@ -2,13 +2,16 @@ FROM rust:1.84 as builder
 
 WORKDIR /app
 
-# Copy manifests from backend directory
-COPY apps/backend/Cargo.toml ./
-COPY apps/backend/Cargo.lock ./Cargo.lock
+# NOTE: Railway typically builds this service with build context = apps/backend.
+# So all COPY paths must be relative to that context (no "apps/backend/" prefix).
 
-# Copy source code from backend directory
-COPY apps/backend/src ./src
-COPY apps/backend/migrations ./migrations
+# Copy manifests
+COPY Cargo.toml ./
+COPY Cargo.lock ./Cargo.lock
+
+# Copy source code + migrations
+COPY src ./src
+COPY migrations ./migrations
 
 # Print toolchain versions and build release with pinned lockfile
 RUN rustc --version && cargo --version
