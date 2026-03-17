@@ -51,20 +51,50 @@ class WebRTCService {
     console.log('[WebRTC] WebSocket set successfully for room:', roomId);
   }
 
+  private isLocalhostContext() {
+    return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+  }
+
+  getUnsupportedReason(): string | null {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+      return 'Panggilan belum tersedia di lingkungan ini.';
+    }
+
+    if (typeof RTCPeerConnection === 'undefined') {
+      return 'Browser ini belum mendukung voice/video call.';
+    }
+
+    if (!window.isSecureContext && !this.isLocalhostContext()) {
+      return 'Voice/video call di mobile memerlukan HTTPS atau localhost. Buka app lewat HTTPS agar kamera dan mikrofon bisa dipakai.';
+    }
+
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      return 'Browser ini tidak menyediakan akses kamera/mikrofon. Di iPhone/iPad biasanya ini terjadi jika app dibuka lewat HTTP, bukan HTTPS.';
+    }
+
+    return null;
+  }
+
+  private async requestUserMedia(callType: CallType) {
+    const unsupportedReason = this.getUnsupportedReason();
+    if (unsupportedReason) {
+      throw new Error(unsupportedReason);
+    }
+
+    return navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: callType === 'video',
+    });
+  }
+
   async startCall(callType: CallType, remoteUserId: string, remoteUsername: string) {
     try {
       console.log(`[WebRTC] Starting ${callType} call to ${remoteUsername} (ID: ${remoteUserId})`);
       console.log('[WebRTC] User Agent:', navigator.userAgent);
       console.log('[WebRTC] WebSocket state:', this.ws?.readyState, 'Room:', this.roomId);
 
-      // Get user media
-      const constraints = {
-        audio: true,
-        video: callType === 'video',
-      };
-
-      console.log('[WebRTC] Requesting media permissions:', constraints);
-      this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('[WebRTC] Requesting media permissions for', callType, 'call');
+      this.localStream = await this.requestUserMedia(callType);
       console.log('[WebRTC] Got local stream:', this.localStream.getTracks().length, 'tracks');
 
       // Create peer connection
@@ -130,7 +160,7 @@ class WebRTCService {
           call_type: callType,
           offer: offer,
           target_user_id: remoteUserId,
-          caller_username: localStorage.getItem('username'),
+          caller_username: localStorage.getItem('display_name') || localStorage.getItem('username') || (localStorage.getItem('email') || 'User'),
         };
         console.log('[WebRTC] Sending offer to target:', remoteUserId);
         console.log('[WebRTC] Offer message:', JSON.stringify(offerMessage).substring(0, 200));
@@ -219,13 +249,7 @@ class WebRTCService {
       const [callStateGetter, setCallState] = this.callState;
       const callStateValue = callStateGetter(); // Get current state
 
-      // Get user media
-      const constraints = {
-        audio: true,
-        video: callType === 'video',
-      };
-
-      this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.localStream = await this.requestUserMedia(callType);
 
       // Create peer connection
       this.peerConnection = new RTCPeerConnection(this.iceServers);
@@ -315,7 +339,7 @@ class WebRTCService {
 
     } catch (error) {
       console.error('[WebRTC] Failed to accept call:', error);
-      alert('Failed to access camera/microphone. Please grant permissions.');
+      alert((error as Error).message || 'Failed to access camera/microphone. Please grant permissions.');
       this.rejectCall();
     }
   }

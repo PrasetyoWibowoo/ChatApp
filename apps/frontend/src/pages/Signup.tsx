@@ -25,28 +25,14 @@ export default function Signup() {
         username: username(),
         password: password() 
       });
-      
-      // Store token and username
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
-      }
-      if (response.data.user_id) {
-        localStorage.setItem('user_id', response.data.user_id);
-      }
-      if (response.data.avatar_url) {
-        localStorage.setItem('avatar_url', response.data.avatar_url);
-      }
+
+      // Store basic identity for convenience (auth token should be obtained after verification + login)
       localStorage.setItem('username', username());
       localStorage.setItem('email', email());
-      
-      // TEMPORARILY DISABLED: Email verification
-      // Skip verification and go directly to home
-      // TODO: Re-enable when domain is verified in Resend
-      // await sendVerificationCode(email());
-      // window.location.href = `/verify-email?email=${encodeURIComponent(email())}`;
-      
-      // Redirect to home page
-      window.location.href = '/';
+
+      // Send verification code and redirect to verification page
+      await sendVerificationCode(email());
+      window.location.href = `/verify-email?email=${encodeURIComponent(email())}`;
     } catch (err: any) {
       console.error('Signup error:', err);
       setError(err?.response?.data?.error || err?.response?.data?.message || err.message || 'Signup failed');

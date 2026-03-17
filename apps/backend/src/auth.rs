@@ -1,6 +1,6 @@
 use crate::email::EmailService;
 use crate::errors::AppError;
-use actix_web::{post, web, HttpResponse};
+use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, Algorithm, DecodingKey, EncodingKey, Header};
@@ -72,12 +72,10 @@ pub async fn login(pool: web::Data<PgPool>, keys: web::Data<JwtKeys>, payload: w
         .map_err(|_| AppError::Internal)?;
     let Some(row) = row_opt else { return Err(AppError::Unauthorized) };
     
-    // TEMPORARILY DISABLED: Email verification check
-    // TODO: Re-enable when domain is verified in Resend
-    // let email_verified: bool = row.try_get("email_verified").unwrap_or(false);
-    // if !email_verified {
-    //     return Err(AppError::BadRequest("Email not verified. Please verify your email first.".into()));
-    // }
+    let email_verified: bool = row.try_get("email_verified").unwrap_or(false);
+    if !email_verified {
+        return Err(AppError::BadRequest("Email not verified. Please verify your email first.".into()));
+    }
     
     let password_hash: String = row.try_get("password_hash").map_err(|_| AppError::Internal)?;
     let parsed = PasswordHash::new(&password_hash).map_err(|_| AppError::Internal)?;
@@ -244,6 +242,50 @@ pub fn extract_user_id_from_auth(header: Option<&str>, decoding: &DecodingKey) -
     let token = auth.strip_prefix("Bearer ").ok_or(AppError::Unauthorized)?;
     let data = jsonwebtoken::decode::<Claims>(token, decoding, &jsonwebtoken::Validation::new(Algorithm::HS256)).map_err(|_| AppError::Unauthorized)?;
     Uuid::parse_str(&data.claims.sub).map_err(|_| AppError::Unauthorized)
+}
+
+#[derive(Deserialize)]
+pub struct UserLookupQuery {
+    pub email: Option<String>,
+}
+
+#[get("/api/users/lookup")]
+pub async fn lookup_user(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    keys: web::Data<JwtKeys>,
+    query: web::Query<UserLookupQuery>,
+) -> Result<HttpResponse, AppError> {
+    // Require authentication
+    let auth_header = req.headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok());
+    extract_user_id_from_auth(auth_header, &keys.decoding)?;
+
+    let email_param = query.email.as_deref().unwrap_or("").trim().to_lowercase();
+    if email_param.is_empty() {
+        return Err(AppError::BadRequest("email query parameter is required".into()));
+    }
+
+    let row_opt = sqlx::query("SELECT id, email, avatar_url FROM users WHERE email = $1")
+        .bind(&email_param)
+        .fetch_optional(pool.get_ref())
+        .await
+        .map_err(|_| AppError::Internal)?;
+
+    match row_opt {
+        Some(row) => {
+            let id: Uuid = row.try_get("id").map_err(|_| AppError::Internal)?;
+            let email: String = row.try_get("email").map_err(|_| AppError::Internal)?;
+            let avatar_url: Option<String> = row.try_get("avatar_url").ok().flatten();
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "id": id,
+                "email": email,
+                "avatar_url": avatar_url,
+            })))
+        }
+        None => Err(AppError::BadRequest("User not found".into())),
+    }
 }
 
 pub fn extract_user_id_from_token(token: &str, decoding: &DecodingKey) -> Result<Uuid, AppError> {

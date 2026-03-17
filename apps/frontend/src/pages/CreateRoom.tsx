@@ -1,4 +1,5 @@
 import { createSignal, onMount } from 'solid-js';
+import { upsertStoredRoom } from '../lib/rooms';
 
 export default function CreateRoom() {
   const [roomName, setRoomName] = createSignal('');
@@ -24,22 +25,12 @@ export default function CreateRoom() {
     const link = `${window.location.origin}/chat/${roomId}`;
     setGeneratedLink(link);
 
-    // Save to "My Rooms" list
-    const savedRooms = localStorage.getItem('myRooms');
-    let rooms = [];
-    try {
-      rooms = savedRooms ? JSON.parse(savedRooms) : [];
-    } catch (e) {
-      rooms = [];
-    }
-    
     const newRoom = {
       id: roomId,
       name: roomName().trim() || roomId,
       timestamp: new Date().toISOString(),
     };
-    rooms = [newRoom, ...rooms];
-    localStorage.setItem('myRooms', JSON.stringify(rooms));
+    upsertStoredRoom(newRoom);
   };
 
   const copyLink = () => {

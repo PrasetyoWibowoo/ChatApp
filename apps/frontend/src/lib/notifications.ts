@@ -4,6 +4,7 @@
  */
 
 import { showNotification as showPWANotification } from './pwa';
+import { readStoredRooms } from './rooms';
 
 // Preload notification sound globally
 const notificationAudio = new Audio('/notification/notification.mp3');
@@ -158,19 +159,16 @@ export function initGlobalNotifications(userId: string, activeRoomId?: string) {
   console.log('[Global Notification] Initializing for user:', userId);
 
   // Get user's rooms from localStorage
-  const savedRooms = localStorage.getItem('myRooms');
   let userRooms: string[] = ['general']; // Default to general room
-  
-  if (savedRooms) {
-    try {
-      const rooms = JSON.parse(savedRooms);
-      userRooms = rooms.map((r: any) => r.id);
-      if (userRooms.length === 0) {
-        userRooms = ['general'];
-      }
-    } catch (e) {
-      console.error('[Global Notification] Failed to parse rooms:', e);
+
+  try {
+    const rooms = readStoredRooms();
+    userRooms = rooms.map((room) => room.id);
+    if (userRooms.length === 0) {
+      userRooms = ['general'];
     }
+  } catch (e) {
+    console.error('[Global Notification] Failed to read rooms:', e);
   }
 
   console.log('[Global Notification] Monitoring rooms:', userRooms);

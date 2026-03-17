@@ -180,6 +180,10 @@ See `.env.example`. Key ones:
 2. Create API key (click "API Keys" → "Create API Key")
 3. Copy key for Railway env vars
 
+**Deliverability (biar tidak masuk spam):**
+- Verifikasi domain di Resend (menu "Domains") lalu gunakan email pengirim dari domain itu
+- Resend akan menyiapkan SPF/DKIM untuk domain Anda; ini yang paling ngaruh untuk menghindari spam folder
+
 **⚠️ Important for Testing:**
 - Free tier only sends to **your registered email**
 - To send to other emails: verify domain at https://resend.com/domains
@@ -191,17 +195,18 @@ See `.env.example`. Key ones:
 3. Add PostgreSQL database
 4. Configure environment variables:
    - `RESEND_API_KEY` - Your Resend API key (from step above)
-   - `SMTP_FROM_EMAIL` - Email sender (or `onboarding@resend.dev` for testing)
+  - `RESEND_FROM_EMAIL` - Email sender (default recommended: `ChatApp <onboarding@resend.dev>`)
+  - `EMAIL_PROVIDER` - Set to `resend` (production) or `log` (dev/testing without sending real email)
    - `JWT_SECRET` - Random secret string
    - `DATABASE_URL` - Auto-filled by Railway
-   - `RAILWAY_CORS_DISABLED` - Set to `true`
+  - `RAILWAY_CORS_DISABLED` - Optional (only if you still hit CORS issues)
 5. Deploy!
 
 ### Vercel (Frontend)
 1. Import GitHub repo at https://vercel.com
 2. Set Root Directory: `apps/frontend`
 3. Framework: Vite
-4. Add `VITE_API_URL` environment variable
+4. Add `VITE_API_URL` environment variable (set this to your Railway backend URL, e.g. `https://<your-app>.up.railway.app`)
 5. Deploy!
 
 **Note**: Railway free tier has CORS proxy limitations. See deployment docs for workarounds.

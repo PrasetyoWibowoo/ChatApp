@@ -1062,17 +1062,22 @@ pub async fn get_unread_counts(
     let user_id = crate::auth::extract_user_id_from_token(token, &jwt_keys.decoding)
         .map_err(|_| actix_web::error::ErrorUnauthorized("Invalid token"))?;
     
-    // Get all rooms user has visited with unread count
-    let rows = sqlx::query_as::<_, (String, i64)>(
-        "SELECT ru.room_id, COUNT(m.id) as unread_count
-         FROM room_users ru
-         LEFT JOIN messages m ON m.room_id = ru.room_id 
-            AND m.created_at > ru.last_read_at 
-            AND m.sender_id != $1
-            AND m.deleted_at IS NULL
-         WHERE ru.user_id = $1
-         GROUP BY ru.room_id"
-    )
+        // Return unread counts for previously visited rooms and direct messages that already target this user.
+        let rows = sqlx::query_as::<_, (String, i64)>(
+                "SELECT m.room_id, COUNT(m.id) as unread_count
+                 FROM messages m
+                 LEFT JOIN room_users ru
+                     ON ru.room_id = m.room_id
+                    AND ru.user_id = $1
+                 WHERE m.sender_id != $1
+                     AND m.deleted_at IS NULL
+                     AND m.created_at > COALESCE(ru.last_read_at, to_timestamp(0))
+                     AND (
+                         ru.user_id IS NOT NULL
+                         OR (m.room_id LIKE 'dm_%' AND m.room_id LIKE '%' || $1::text || '%')
+                     )
+                 GROUP BY m.room_id"
+        )
     .bind(user_id)
     .fetch_all(pool.get_ref())
     .await

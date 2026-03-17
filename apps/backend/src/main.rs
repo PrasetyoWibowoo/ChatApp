@@ -4,6 +4,7 @@ mod config;
 mod db;
 mod email;
 mod errors;
+mod friends;
 mod models;
 mod ws;
 mod ratelimit;
@@ -120,7 +121,15 @@ async fn main() -> std::io::Result<()> {
             .service(auth::login)
             .service(auth::send_verification)
             .service(auth::verify_email)
+            .service(auth::lookup_user)
             .service(avatar::update_avatar)
+            .service(friends::send_friend_request)
+            .service(friends::list_friends)
+            .service(friends::accept_friend_request)
+            .service(friends::remove_friend)
+            .service(friends::get_invite_code)
+            .service(friends::lookup_by_invite_code)
+            .service(friends::get_user_profile)
             .route("/ws/rooms/{id}", web::get().to(ws::ws_index))
             .route("/api/rooms/{id}/messages", web::get().to(ws::get_messages))
             .route("/api/rooms/{id}/search", web::get().to(ws::search_messages))

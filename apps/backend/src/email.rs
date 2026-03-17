@@ -3,31 +3,77 @@ use rand::{distributions::Alphanumeric, Rng};
 use reqwest::Client;
 use serde_json::json;
 
+#[derive(Clone, Copy, Debug)]
+enum EmailProvider {
+    Resend,
+    Log,
+}
+
 pub struct EmailService {
     client: Client,
-    resend_api_key: String,
+    provider: EmailProvider,
+    resend_api_key: Option<String>,
     from_email: String,
 }
 
 impl EmailService {
     pub fn new() -> Result<Self> {
-        let resend_api_key = std::env::var("RESEND_API_KEY")
-            .context("RESEND_API_KEY must be set (get free key from resend.com)")?;
-        
-        // Use registered email for free tier (can only send to same email without domain verification)
-        let from_email = std::env::var("SMTP_FROM_EMAIL")
-            .unwrap_or_else(|_| "wibowoprasetyo40@gmail.com".to_string());
+        let provider_env = std::env::var("EMAIL_PROVIDER")
+            .unwrap_or_else(|_| "".to_string())
+            .trim()
+            .to_lowercase();
 
-        log::info!("Initializing EmailService with Resend API");
-        log::info!("From email: {}", from_email);
+        let resend_api_key = std::env::var("RESEND_API_KEY").ok().and_then(|v| {
+            let trimmed = v.trim().to_string();
+            if trimmed.is_empty() { None } else { Some(trimmed) }
+        });
 
-        let client = Client::new();
-        log::info!("EmailService initialized successfully");
+        // Prefer explicit Resend sender. Fallback is a non-Google testing sender.
+        // For best deliverability (less spam), verify a domain in Resend and use
+        // an address on that domain.
+        let from_email = std::env::var("RESEND_FROM_EMAIL")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| {
+                std::env::var("EMAIL_FROM")
+                    .ok()
+                    .filter(|v| !v.trim().is_empty())
+            })
+            .unwrap_or_else(|| "ChatApp <onboarding@resend.dev>".to_string());
 
-        Ok(Self { 
-            client,
+        let provider = match provider_env.as_str() {
+            "log" => EmailProvider::Log,
+            // default: use resend if key present, otherwise log
+            _ => {
+                if resend_api_key.is_some() {
+                    EmailProvider::Resend
+                } else {
+                    EmailProvider::Log
+                }
+            }
+        };
+
+        match provider {
+            EmailProvider::Resend => {
+                log::info!("EmailService provider: Resend");
+                log::info!("From email: {}", from_email);
+            }
+            EmailProvider::Log => {
+                if provider_env != "log" {
+                    log::warn!(
+                        "RESEND_API_KEY not set; falling back to EMAIL_PROVIDER=log (verification codes will be logged, not emailed)"
+                    );
+                } else {
+                    log::info!("EmailService provider: log");
+                }
+            }
+        }
+
+        Ok(Self {
+            client: Client::new(),
+            provider,
             resend_api_key,
-            from_email 
+            from_email,
         })
     }
 
@@ -40,6 +86,21 @@ impl EmailService {
     }
 
     pub async fn send_verification_code(&self, to_email: &str, code: &str) -> Result<()> {
+        if matches!(self.provider, EmailProvider::Log) {
+            log::info!(
+                "[EmailVerification][LOG] to={} code={} (set RESEND_API_KEY + RESEND_FROM_EMAIL to send real email)",
+                to_email,
+                code
+            );
+            return Ok(());
+        }
+
+        let Some(resend_api_key) = self.resend_api_key.as_deref() else {
+            // Defensive: should not happen because provider selection falls back to Log.
+            log::warn!("Resend provider selected but RESEND_API_KEY missing; skipping email send");
+            return Ok(());
+        };
+
         let html_body = format!(
             r#"<html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -62,15 +123,21 @@ impl EmailService {
             code
         );
 
+        let text_body = format!(
+            "Kode verifikasi ChatApp Anda: {}\n\nBerlaku 10 menit. Jika Anda tidak merasa meminta kode ini, abaikan email ini.",
+            code
+        );
+
         let response = self.client
             .post("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", self.resend_api_key))
+            .header("Authorization", format!("Bearer {}", resend_api_key))
             .header("Content-Type", "application/json")
             .json(&json!({
                 "from": self.from_email,
                 "to": [to_email],
-                "subject": "Email Verification Code - ChatApp",
-                "html": html_body
+                "subject": "Kode Verifikasi ChatApp",
+                "html": html_body,
+                "text": text_body
             }))
             .send()
             .await

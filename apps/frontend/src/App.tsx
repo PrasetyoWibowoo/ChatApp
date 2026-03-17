@@ -6,6 +6,9 @@ const Signup = lazy(() => import('./pages/Signup.tsx'));
 const EmailVerification = lazy(() => import('./pages/EmailVerification.tsx'));
 const Chat = lazy(() => import('./pages/Chat.tsx'));
 const CreateRoom = lazy(() => import('./pages/CreateRoom.tsx'));
+const Contacts = lazy(() => import('./pages/Contacts.tsx'));
+const Invite = lazy(() => import('./pages/Invite.tsx'));
+const Profile = lazy(() => import('./pages/Profile.tsx'));
 
 export default function App() {
   const [path, setPath] = createSignal(window.location.pathname);
@@ -21,6 +24,9 @@ export default function App() {
   if (p().startsWith('/signup')) return <Signup />;
   if (p().startsWith('/verify-email')) return <EmailVerification />;
   if (p().startsWith('/create-room')) return <CreateRoom />;
+  if (p().startsWith('/contacts')) return <Contacts />;
+  if (p().startsWith('/invite')) return <Invite />;
+  if (p().startsWith('/profile')) return <Profile />;
   if (p().startsWith('/chat/')) return <Chat />;
   
   return <div>Not Found</div>;

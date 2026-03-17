@@ -1,12 +1,26 @@
 import { defineConfig } from 'vite';
 import solid from 'vite-plugin-solid';
 
-// Expose dev server on LAN so phones on the same Wi‑Fi can access it
 export default defineConfig({
   plugins: [solid()],
   server: {
-    host: true, // listen on 0.0.0.0
-    port: 5173,
+    host: true,
+    port: 5174,
+    strictPort: true,
+    hmr: {
+      port: 5174,
+    },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+        changeOrigin: true,
+      },
+    },
   },
   build: { target: 'esnext' }
 });

@@ -1,10 +1,12 @@
-import { onCleanup, onMount, createSignal, createMemo, For, Show } from 'solid-js';
+﻿import { onCleanup, onMount, createSignal, createMemo, For, Show } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import EmojiPicker from '../components/EmojiPicker';
 import CallInterface from '../components/CallInterface';
 import { SmileIcon, ImageIcon, SendIcon, LinkIcon, CheckIcon, CheckDoubleIcon, ReplyIcon, TrashIcon, SearchIcon, EditIcon, PhoneIcon, VideoIcon } from '../components/Icons';
 import { getDisplayName, getInitials } from '../lib/displayName';
 import { webrtcService } from '../lib/webrtc';
 import { playNotificationSound, showMessageNotification, ensureNotificationPermission, updateCurrentRoom } from '../lib/notifications';
+import { getDefaultRoomName, getDmRoomId, readStoredRooms, subscribeToStoredRooms, upsertStoredRoom, extractDmOtherUserId } from '../lib/rooms';
 
 function getApiBaseUrl() {
   const apiUrl = import.meta.env.VITE_API_URL as string;
@@ -45,6 +47,18 @@ export default function Chat() {
     const parts = window.location.pathname.split('/');
     return parts[2] || 'general';
   })();
+
+  const isDmRoom = roomId.startsWith('dm_');
+
+  const dmPartnerName = () => sidebarRooms().find(r => r.id === roomId)?.name || 'Direct Message';
+  const dmPartnerOnline = () => {
+    const otherId = extractDmOtherUserId(roomId, myUserId);
+    return otherId ? onlineUsers().some(u => u.user_id === otherId) : false;
+  };
+  const dmPartnerEmail = () => {
+    const otherId = extractDmOtherUserId(roomId, myUserId);
+    return onlineUsers().find(u => u.user_id === otherId)?.email || '';
+  };
   
   const [status, setStatus] = createSignal<string>('disconnected');
   const [messages, setMessages] = createSignal<Message[]>([]);
@@ -79,13 +93,89 @@ export default function Chat() {
   // Call user selection state
   const [showCallMenu, setShowCallMenu] = createSignal(false);
   const [callMenuType, setCallMenuType] = createSignal<'voice' | 'video'>('voice');
-  
+  const [showAvatarMenu, setShowAvatarMenu] = createSignal(false);
+  const [popoverPos, setPopoverPos] = createSignal({ bottom: 72, left: 76 });
+
+  const [myAvatar, setMyAvatar] = createSignal(localStorage.getItem('avatar_url') || '');
+
+  let avatarBtnRef: HTMLButtonElement | undefined;
+  // Direct message
+  const [showNewDmModal, setShowNewDmModal] = createSignal(false);
+  const [dmModalTab, setDmModalTab] = createSignal<'search' | 'friends' | 'online'>('friends');
+  const [dmSearchEmail, setDmSearchEmail] = createSignal('');
+  const [dmSearchCode, setDmSearchCode] = createSignal('');
+  const [dmSearchResult, setDmSearchResult] = createSignal<{id: string, email: string, avatar_url?: string} | null>(null);
+  const [dmSearchError, setDmSearchError] = createSignal('');
+  const [dmSearchLoading, setDmSearchLoading] = createSignal(false);
+  const [dmInviteCopied, setDmInviteCopied] = createSignal(false);
+  const [dmLinkCopied, setDmLinkCopied] = createSignal(false);
+  const [friendsList, setFriendsList] = createSignal<Array<{id:string,user_id:string,email:string,avatar_url?:string,status:string,direction:string}>>([]);
+  const [friendsLoading, setFriendsLoading] = createSignal(false);
+  const [myInviteCode, setMyInviteCode] = createSignal('');
+  // UI layout state
+  const [showRightPanel, setShowRightPanel] = createSignal(true);
+  const [rightPanelMode, setRightPanelMode] = createSignal<'room' | 'contact'>('room');
+  const [selectedContact, setSelectedContact] = createSignal<{email: string, avatar?: string, userId?: string} | null>(null);
+  const [sidebarRooms, setSidebarRooms] = createSignal<Array<{id: string, name: string, lastMessage?: string}>>([]);
+  const [sidebarSearch, setSidebarSearch] = createSignal('');
+  const [sidebarOpen, setSidebarOpen] = createSignal(false);
+
   let ws: WebSocket | null = null;
   let messagesContainer: HTMLDivElement | undefined;
   let typingTimeout: any;
   let myUserId = '';
-  let myAvatar = '';
   let fileInputRef: HTMLInputElement | undefined;
+
+  const refreshMyProfileFromStorage = () => {
+    setMyAvatar(localStorage.getItem('avatar_url') || '');
+
+    const sc = selectedContact();
+    const myEmail = localStorage.getItem('email') || '';
+    if (sc?.email && sc.email === myEmail) {
+      setSelectedContact({ ...sc, avatar: localStorage.getItem('avatar_url') || sc.avatar });
+    }
+  };
+
+  const selectedContactAvatarUrl = () => {
+    const sc = selectedContact();
+    if (!sc) return undefined;
+    const myEmail = localStorage.getItem('email') || '';
+    if (sc.email && sc.email === myEmail) {
+      return myAvatar() || sc.avatar;
+    }
+    return sc.avatar;
+  };
+
+  const getStoredRoomName = (fallbackEmail?: string) => {
+    const existingRoom = readStoredRooms().find((room) => room.id === roomId);
+    if (existingRoom?.name && existingRoom.name !== 'Direct Message') {
+      return existingRoom.name;
+    }
+    if (fallbackEmail) {
+      return getDisplayName(fallbackEmail);
+    }
+    return getDefaultRoomName(roomId);
+  };
+
+  const rememberCurrentRoom = (details?: { name?: string; lastMessage?: string; timestamp?: string; bumpTimestamp?: boolean }) => {
+    upsertStoredRoom({
+      id: roomId,
+      name: details?.name || getStoredRoomName(),
+      lastMessage: details?.lastMessage,
+      timestamp: details?.timestamp,
+    }, { bumpTimestamp: details?.bumpTimestamp });
+  };
+
+  const startCallFlow = (callType: 'voice' | 'video') => {
+    const unsupportedReason = webrtcService.getUnsupportedReason();
+    if (unsupportedReason) {
+      alert(unsupportedReason);
+      return;
+    }
+
+    setCallMenuType(callType);
+    setShowCallMenu(true);
+  };
 
   onMount(() => {
     const token = localStorage.getItem('token');
@@ -94,7 +184,34 @@ export default function Chat() {
       return;
     }
     
-    myAvatar = localStorage.getItem('avatar_url') || '';
+    refreshMyProfileFromStorage();
+
+    const onProfileUpdated = () => refreshMyProfileFromStorage();
+    window.addEventListener('profile:updated', onProfileUpdated as EventListener);
+    onCleanup(() => window.removeEventListener('profile:updated', onProfileUpdated as EventListener));
+
+    const onAppVisible = () => refreshMyProfileFromStorage();
+    window.addEventListener('focus', onAppVisible);
+    window.addEventListener('pageshow', onAppVisible);
+    onCleanup(() => {
+      window.removeEventListener('focus', onAppVisible);
+      window.removeEventListener('pageshow', onAppVisible);
+    });
+
+    rememberCurrentRoom({ bumpTimestamp: false });
+    setSidebarRooms(readStoredRooms());
+
+    const unsubscribeRooms = subscribeToStoredRooms((rooms) => setSidebarRooms(rooms));
+    onCleanup(unsubscribeRooms);
+
+    // Close avatar menu on click outside
+    const handleDocClick = (e: MouseEvent) => {
+      if (avatarBtnRef && !avatarBtnRef.contains(e.target as Node)) {
+        setShowAvatarMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleDocClick);
+    onCleanup(() => document.removeEventListener('mousedown', handleDocClick));
 
     // Decode token to get user ID FIRST (needed for WebRTC filtering)
     try {
@@ -128,30 +245,7 @@ export default function Chat() {
     console.log('[Chat] Current room set to:', roomId);
 
     // Save room to localStorage for "My Rooms" list
-    const saveRoomToList = () => {
-      const savedRooms = localStorage.getItem('myRooms');
-      let rooms = [];
-      try {
-        rooms = savedRooms ? JSON.parse(savedRooms) : [];
-      } catch (e) {
-        rooms = [];
-      }
-      
-      const exists = rooms.find((r: any) => r.id === roomId);
-      if (!exists) {
-        const newRoom = {
-          id: roomId,
-          name: roomId === 'general' ? 'General Chat' : 
-                roomId === 'team' ? 'Team Chat' :
-                roomId === 'support' ? 'Support' : roomId,
-          timestamp: new Date().toISOString(),
-        };
-        rooms = [newRoom, ...rooms];
-        localStorage.setItem('myRooms', JSON.stringify(rooms));
-      }
-    };
-    
-    saveRoomToList();
+    rememberCurrentRoom({ bumpTimestamp: false });
 
     // Use Railway backend URL from environment variable
     const getApiBase = () => {
@@ -262,6 +356,12 @@ export default function Chat() {
           if (msg.sender_id !== myUserId) {
             playNotificationSound();
           }
+
+          rememberCurrentRoom({
+            name: getStoredRoomName(msg.sender_email),
+            lastMessage: msg.content || '[Image]',
+            timestamp: msg.created_at,
+          });
           
           setMessages((prev) => [...prev, {
             id: msg.id,
@@ -348,38 +448,38 @@ export default function Chat() {
           // Only handle if this message is for me
           console.log('[WebRTC] Offer received - sender:', msg.sender_id, 'target:', msg.target_user_id, 'myId:', myUserId);
           if (msg.target_user_id === myUserId) {
-            console.log('[WebRTC] ✅ Incoming call from', msg.callerUsername);
+            console.log('[WebRTC] âœ… Incoming call from', msg.callerUsername);
             (window as any).__pendingCallOffer = msg.offer;
             webrtcService.handleCallOffer(msg.offer, msg.callType, msg.sender_id, msg.callerUsername);
           } else {
-            console.log('[WebRTC] ❌ Offer not for me, ignoring');
+            console.log('[WebRTC] âŒ Offer not for me, ignoring');
           }
         } else if (msg.type === 'call-answer') {
           // Only handle if this message is for me
           console.log('[WebRTC] Answer received - sender:', msg.sender_id, 'target:', msg.target_user_id, 'myId:', myUserId);
           if (msg.target_user_id === myUserId) {
-            console.log('[WebRTC] ✅ Call answered');
+            console.log('[WebRTC] âœ… Call answered');
             webrtcService.handleCallAnswer(msg.answer);
           } else {
-            console.log('[WebRTC] ❌ Answer not for me, ignoring');
+            console.log('[WebRTC] âŒ Answer not for me, ignoring');
           }
         } else if (msg.type === 'call-ice-candidate') {
           // Only handle if this message is for me
           if (msg.target_user_id === myUserId) {
-            console.log('[WebRTC] ✅ ICE candidate received');
+            console.log('[WebRTC] âœ… ICE candidate received');
             webrtcService.handleIceCandidate(msg.candidate);
           }
         } else if (msg.type === 'call-rejected') {
           // Only handle if this message is for me
           if (msg.target_user_id === myUserId) {
-            console.log('[WebRTC] ✅ Call rejected');
+            console.log('[WebRTC] âœ… Call rejected');
             alert('Call rejected');
             webrtcService.endCall();
           }
         } else if (msg.type === 'call-ended') {
           // Only handle if this message is for me
           if (msg.target_user_id === myUserId) {
-            console.log('[WebRTC] ✅ Call ended by remote user');
+            console.log('[WebRTC] âœ… Call ended by remote user');
             webrtcService.endCall();
           }
         }
@@ -404,6 +504,8 @@ export default function Chat() {
         if (response.ok) {
           const newMessages = await response.json();
           if (newMessages && newMessages.length > 0) {
+            const latestMessage = newMessages[newMessages.length - 1] as Message;
+
             // Populate read receipts from polled messages
             let hasNewReceipts = false;
             setReadReceipts((prev) => {
@@ -430,6 +532,12 @@ export default function Chat() {
                 latestMsg.id
               );
             }
+
+            rememberCurrentRoom({
+              name: getStoredRoomName(latestMessage.sender_email),
+              lastMessage: latestMessage.content || '[Image]',
+              timestamp: latestMessage.created_at,
+            });
             
             setMessages(prev => [...prev, ...newMessages]);
             setTimeout(() => {
@@ -475,7 +583,7 @@ export default function Chat() {
     console.log('[MarkRead] Called, WS state:', ws?.readyState, 'OPEN=', WebSocket.OPEN, 'myUserId:', myUserId?.substring(0,8));
     
     if (!ws || ws.readyState !== WebSocket.OPEN || !myUserId) {
-      console.log('[MarkRead] ⚠️ WebSocket not ready, skipping');
+      console.log('[MarkRead] âš ï¸ WebSocket not ready, skipping');
       return;
     }
 
@@ -743,6 +851,109 @@ export default function Chat() {
     setTimeout(() => setShowCopied(false), 2000);
   };
 
+  const navigateToDm = (otherUserId: string, otherEmail: string) => {
+    if (!myUserId || !otherUserId) return;
+    const dmRoomId = getDmRoomId(myUserId, otherUserId);
+    upsertStoredRoom({ id: dmRoomId, name: getDisplayName(otherEmail) });
+    window.location.href = `/chat/${dmRoomId}`;
+  };
+
+  const lookupUserByEmail = async () => {
+    const email = dmSearchEmail().trim();
+    const code = dmSearchCode().trim().toUpperCase();
+    if (!email && !code) return;
+    setDmSearchLoading(true);
+    setDmSearchError('');
+    setDmSearchResult(null);
+    try {
+      const token = localStorage.getItem('token');
+      const api = getApiBaseUrl();
+      let res: Response;
+      if (email) {
+        res = await fetch(`${api}/api/users/lookup?email=${encodeURIComponent(email)}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } else {
+        res = await fetch(`${api}/api/users/by-invite/${encodeURIComponent(code)}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
+      if (!res.ok) throw new Error('not found');
+      const data = await res.json();
+      setDmSearchResult(data);
+    } catch {
+      setDmSearchError('Pengguna tidak ditemukan.');
+    } finally {
+      setDmSearchLoading(false);
+    }
+  };
+
+  const loadFriendsForDm = async () => {
+    setFriendsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${getApiBaseUrl()}/api/friends`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const all = await res.json();
+        setFriendsList(all.filter((f: any) => f.status === 'accepted'));
+      }
+    } catch (_) {}
+    finally { setFriendsLoading(false); }
+  };
+
+  const loadMyInviteCode = async () => {
+    if (myInviteCode()) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${getApiBaseUrl()}/api/users/invite-code`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMyInviteCode(data.code || '');
+      }
+    } catch (_) {}
+  };
+
+  const addFriendFromSearch = async () => {
+    const result = dmSearchResult();
+    if (!result) return;
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${getApiBaseUrl()}/api/friends/request`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: result.id }),
+      });
+      loadFriendsForDm();
+    } catch (_) {}
+  };
+
+  const getMyInviteLink = () => {
+    if (!myUserId) return '';
+    return `${window.location.origin}/invite/${myUserId}`;
+  };
+
+  const copyInviteLink = async () => {
+    try {
+      await navigator.clipboard.writeText(getMyInviteLink());
+      setDmInviteCopied(true);
+      setTimeout(() => setDmInviteCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  };
+
+  const copyInviteCode = async () => {
+    try {
+      await navigator.clipboard.writeText(myInviteCode());
+      setDmLinkCopied(true);
+      setTimeout(() => setDmLinkCopied(false), 2000);
+    } catch {}
+  };
+
   const addEmoji = (emoji: string) => {
     setInput(input() + emoji);
   };
@@ -873,742 +1084,930 @@ export default function Chat() {
 
   return (
     <>
-      <div class="chat-topbar">
-        <div class="chat-topbar-inner">
-          <div class="brand">
-            Chat - {roomId}
-            <button 
-              onClick={shareRoom} 
-              class="btn btn-ghost"
-              style={{ 'margin-left': '0.5rem', 'font-size': '0.9rem', 'display': 'inline-flex', 'align-items': 'center', 'gap': '0.25rem' }}
-              title="Share room link"
-            >
-              <LinkIcon />
-              {showCopied() ? 'Copied!' : 'Share'}
+      <div class="app-layout">
+
+        {/* Mobile sidebar overlay */}
+        <div class={"sidebar-overlay" + (sidebarOpen() ? " drawer-open" : "")} onClick={() => setSidebarOpen(false)} />
+
+        {/* Drawer: nav-strip + sidebar slide together on mobile */}
+        <div class={"drawer" + (sidebarOpen() ? " drawer-open" : "")}>
+
+        {/* â”€â”€ Left Navigation Strip â”€â”€ */}
+        <nav class="nav-strip">
+          <a href="/" class="nav-brand-icon" title="Home">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </a>
+          <div class="nav-icons-group">
+            <a href="/" class="nav-icon-btn" title="Home">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/>
+              </svg>
+            </a>
+            <a href="#" class="nav-icon-btn active" title="Chats">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+              </svg>
+            </a>
+            <a href="/create-room" class="nav-icon-btn" title="Create Room">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </a>
+            <a href="/contacts" class="nav-icon-btn" title="Kontak">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </a>
+            <button class="nav-icon-btn" onClick={() => setShowSearch(true)} title="Search">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
             </button>
           </div>
-          <div class="spacer" />
-          <button 
-            class="btn btn-ghost icon-btn"
-            onClick={() => {
-              setCallMenuType('voice');
-              setShowCallMenu(true);
-            }}
-            title="Start voice call"
-          >
-            <PhoneIcon />
-          </button>
-          <button 
-            class="btn btn-ghost icon-btn"
-            onClick={() => {
-              setCallMenuType('video');
-              setShowCallMenu(true);
-            }}
-            title="Start video call"
-          >
-            <VideoIcon />
-          </button>
-          <button 
-            class="btn btn-ghost icon-btn"
-            onClick={() => setShowSearch(true)}
-            title="Search messages"
-          >
-            <SearchIcon />
-          </button>
-          <div class="online-status" title={onlineUsers().map(u => u.email).join(', ')}>
-            <span class="dot ok"></span>
-            {onlineUsers().length} online
-          </div>
-          <div class="status">
-            <span class={"dot " + (status() === 'connected' ? 'ok' : '')}></span>
-            {status()}
-          </div>
-          <a class="btn btn-ghost" href="/create-room">New Room</a>
-          <a class="btn btn-ghost" href="/">Home</a>
-          {myAvatar ? (
-            <img src={myAvatar} alt="You" style="width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--border); margin-left: 8px;" />
-          ) : (
-            <div class="avatar-placeholder" style="width: 36px; height: 36px; margin-left: 8px; display: inline-flex;">{localStorage.getItem('email')?.substring(0, 2).toUpperCase()}</div>
-          )}
-        </div>
-      </div>
+          <div class="nav-bottom-group">
+            <div class="nav-avatar-wrap">
+              <button
+                ref={avatarBtnRef}
+                class="nav-icon-btn nav-avatar-btn"
+                title="My Profile"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (avatarBtnRef) {
+                    const rect = avatarBtnRef.getBoundingClientRect();
+                    setPopoverPos({ bottom: window.innerHeight - rect.top + 8, left: rect.right + 8 });
+                  }
+                  setShowAvatarMenu(m => !m);
+                }}
+              >
+                {myAvatar ? (
+                  <img src={myAvatar()} alt="You" class="nav-avatar-img" />
+                ) : (
+                  <div class="nav-avatar-placeholder">
+                    {(localStorage.getItem('email') || 'U')[0].toUpperCase()}
+                  </div>
+                )}
+              </button>
+            </div>
 
-      <div class="chat-container">
-        {/* Pinned Messages Section */}
-        <Show when={(() => {
-          const pinned = messages().filter(m => pinnedMessages().has(m.id));
-          return pinned.length > 0;
-        })()}>
-          <div style={{
-            background: 'rgba(255, 166, 87, 0.1)',
-            'border-bottom': '1px solid rgba(255, 166, 87, 0.3)',
-            padding: '8px 16px',
-            'font-size': '13px',
-            color: '#ffa657',
-            display: 'flex',
-            'align-items': 'center',
-            gap: '8px',
-            'flex-wrap': 'wrap',
-          }}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M9.828 1.172a.5.5 0 0 1 0 .707l-1.293 1.293.707.707a.5.5 0 0 1 0 .707l-.707.707a.5.5 0 0 1-.707 0l-.707-.707-5.657 5.657a.5.5 0 0 1-.707 0l-.707-.707a.5.5 0 0 1 0-.707l5.657-5.657-.707-.707a.5.5 0 0 1 0-.707l.707-.707a.5.5 0 0 1 .707 0l.707.707 1.293-1.293a.5.5 0 0 1 .707 0zM9.828 8a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-5a.5.5 0 0 1 .5-.5h3z"/>
-            </svg>
-            <span style={{ 'font-weight': '600' }}>{messages().filter(m => pinnedMessages().has(m.id)).length} pinned message(s)</span>
-            <For each={messages().filter(m => pinnedMessages().has(m.id))}>
-              {(pinnedMsg) => (
-                <button
-                  onClick={() => {
-                    const element = document.getElementById(`msg-${pinnedMsg.id}`);
-                    if (element) {
-                      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      // Highlight effect
-                      element.style.animation = 'highlight 1s ease';
-                      setTimeout(() => {
-                        element.style.animation = '';
-                      }, 1000);
-                    }
-                  }}
-                  style={{
-                    background: 'rgba(255, 166, 87, 0.2)',
-                    border: '1px solid rgba(255, 166, 87, 0.4)',
-                    'border-radius': '12px',
-                    padding: '6px 12px',
-                    color: '#ffa657',
-                    cursor: 'pointer',
-                    'font-size': '12px',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    'flex-direction': 'column',
-                    'align-items': 'flex-start',
-                    gap: '2px',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 166, 87, 0.3)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 166, 87, 0.2)';
-                  }}
-                  title={`From: ${getDisplayName(pinnedMsg.sender_email)}\nID: ${pinnedMsg.id.substring(0, 8)}`}
-                >
-                  <div style={{ 'font-size': '10px', opacity: 0.8 }}>
-                    {getDisplayName(pinnedMsg.sender_email)} • {new Date(pinnedMsg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                  <div>
-                    {pinnedMsg.content.substring(0, 30)}{pinnedMsg.content.length > 30 ? '...' : ''}
-                  </div>
+            <button
+              class="nav-icon-btn"
+              title="Logout"
+              onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('myRooms'); window.location.href = '/login'; }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </button>
+          </div>
+
+          {/* Avatar popover — rendered via Portal to escape nav-strip stacking context */}
+          <Show when={showAvatarMenu()}>
+            <Portal>
+              <div
+                class="avatar-popover"
+                style={`position:fixed;bottom:${popoverPos().bottom}px;left:${popoverPos().left}px;`}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div class="avatar-popover-email">{localStorage.getItem('email') || ''}</div>
+                <a href="/profile" class="avatar-popover-item" onClick={() => setShowAvatarMenu(false)}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  Edit Profile
+                </a>
+                <button class="avatar-popover-item avatar-popover-logout" onClick={() => { localStorage.clear(); window.location.href = '/login'; }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                  Logout
                 </button>
-              )}
+              </div>
+            </Portal>
+          </Show>
+        </nav>
+
+        {/* â”€â”€ Sidebar Chat List â”€â”€ */}
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <span class="sidebar-title">Chatting</span>
+            <Show when={messages().length > 0}>
+              <span class="sidebar-count">({messages().length})</span>
+            </Show>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;opacity:0.45;cursor:pointer;">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+          </div>
+          <div class="sidebar-search-bar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input
+              class="sidebar-search-input"
+              type="text"
+              placeholder="Search chat / people"
+              value={sidebarSearch()}
+              onInput={(e) => setSidebarSearch(e.currentTarget.value)}
+            />
+          </div>
+          <div class="sidebar-shortcuts">
+            <a href="/contacts" class="sidebar-contacts-shortcut">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+              Tambah / Kelola Kontak
+            </a>
+          </div>
+          <div class="sidebar-list" style="flex:1;overflow-y:auto;">
+            {/* Direct Messages Section */}
+            <div class="sidebar-section-label">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.7"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Pesan Langsung
+              <button class="sidebar-section-more" onClick={() => { setSidebarOpen(false); setShowNewDmModal(true); loadFriendsForDm(); loadMyInviteCode(); }} title="Mulai DM baru">+</button>
+            </div>
+            <For each={sidebarRooms().filter(r => r.id.startsWith('dm_') && (() => { const q = sidebarSearch().toLowerCase(); return !q || r.name.toLowerCase().includes(q); })())}>
+              {(room) => {
+                const isActive = room.id === roomId;
+                const lastMsg = isActive && messages().length > 0 ? messages()[messages().length - 1] : null;
+                return (
+                  <a href={`/chat/${room.id}`} class={'sidebar-room-item' + (isActive ? ' active' : '')}>
+                    <div class="sidebar-room-avatar">
+                      <div class="sidebar-room-avatar-inner" style="background:linear-gradient(135deg,#34b7f1,#1a9c8a)">{room.name[0]?.toUpperCase() || 'D'}</div>
+                      <Show when={isActive}><span class="sidebar-avatar-online-dot"></span></Show>
+                    </div>
+                    <div class="sidebar-room-info">
+                      <div class="sidebar-room-name">{room.name}</div>
+                      <div class="sidebar-room-preview">
+                        {lastMsg?.image_url && !lastMsg.content && (<span class="preview-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Photo</span>)}
+                        {lastMsg ? (lastMsg.content || '').substring(0, 28) : 'Mulai percakapan'}
+                      </div>
+                    </div>
+                    <div class="sidebar-room-meta">
+                      {lastMsg && <div class="sidebar-room-time">{formatTime(lastMsg.created_at)}</div>}
+                    </div>
+                  </a>
+                );
+              }}
+            </For>
+            <Show when={sidebarRooms().filter(r => r.id.startsWith('dm_')).length === 0}>
+              <button class="sidebar-dm-empty" onClick={() => { setSidebarOpen(false); setShowNewDmModal(true); loadFriendsForDm(); loadMyInviteCode(); }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Mulai chat langsung
+              </button>
+            </Show>
+
+            {/* Group / Room Channels Section */}
+            <div class="sidebar-section-label" style="margin-top:10px;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.7"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Grup & Channel
+              <button class="sidebar-section-more">···</button>
+            </div>
+            <For each={sidebarRooms().filter(r => !r.id.startsWith('dm_') && (() => { const q = sidebarSearch().toLowerCase(); return !q || r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q); })())}>
+              {(room) => {
+                const isActive = room.id === roomId;
+                const lastMsg = isActive && messages().length > 0 ? messages()[messages().length - 1] : null;
+                return (
+                  <a href={`/chat/${room.id}`} class={'sidebar-room-item' + (isActive ? ' active' : '')}>
+                    <div class="sidebar-room-avatar">
+                      <div class="sidebar-room-avatar-inner">{room.name[0]?.toUpperCase()}</div>
+                      <Show when={isActive}><span class="sidebar-avatar-online-dot"></span></Show>
+                    </div>
+                    <div class="sidebar-room-info">
+                      <div class="sidebar-room-name">{room.name}</div>
+                      <div class="sidebar-room-preview">
+                        {lastMsg?.image_url && !lastMsg.content && (<span class="preview-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Photo</span>)}
+                        {lastMsg ? (lastMsg.content || '').substring(0, 28) : 'Open room'}
+                      </div>
+                    </div>
+                    <div class="sidebar-room-meta">
+                      {lastMsg && <div class="sidebar-room-time">{formatTime(lastMsg.created_at)}</div>}
+                    </div>
+                  </a>
+                );
+              }}
             </For>
           </div>
-        </Show>
+          <div class="sidebar-footer">
+            <a href="/profile" class="sidebar-footer-user" title="Edit Profile">
+              {myAvatar() ? (
+                <img src={myAvatar()} class="sidebar-footer-avatar-img" alt="" />
+              ) : (
+                <div class="sidebar-footer-avatar-placeholder">{(localStorage.getItem('email') || 'U')[0].toUpperCase()}</div>
+              )}
+              <div class="sidebar-footer-info">
+                <div class="sidebar-footer-name">{getDisplayName(localStorage.getItem('email') || '')}</div>
+                <div class="sidebar-footer-email">{localStorage.getItem('email') || ''}</div>
+              </div>
+            </a>
+            <button class="sidebar-footer-logout-btn" onClick={() => { localStorage.clear(); window.location.href = '/login'; }} title="Logout">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </button>
+          </div>
+        </aside>
 
-        <div class="messages-container" ref={messagesContainer}>
-          <For each={messages()} fallback={<div>Loading...</div>}>
-            {(msg) => {
-              const isMe = msg.sender_id === myUserId;
-              const initials = getInitials(msg.sender_email);
-              
-              return (
-                <div 
-                  class={"message-row " + (isMe ? 'me' : 'other')} 
-                  id={`msg-${msg.id}`}
-                  onContextMenu={(e) => handleContextMenu(e, msg)}
-                  onTouchStart={(e) => handleLongPressStart(e, msg)}
-                  onTouchEnd={handleLongPressEnd}
-                  onTouchMove={handleLongPressEnd}
-                >
-                  {!isMe && (
-                    <div class="message-avatar">
-                      {msg.sender_avatar ? (
-                        <img src={msg.sender_avatar} alt={msg.sender_email} />
-                      ) : (
-                        <div class="avatar-placeholder">{initials}</div>
-                      )}
-                    </div>
+        {/* â”€â”€ Main Chat Area â”€â”€ */}
+        </div>{/* end drawer */}
+
+        {/* ── Main Chat Area ── */}
+        <main class="chat-main">
+
+          {/* Chat Header */}
+          <div class="chat-header-new">
+            <div class="chat-header-left">
+              {/* Hamburger — mobile only */}
+              <button class="hamburger-btn" onClick={() => setSidebarOpen(o => !o)} title="Menu" aria-label="Open sidebar">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                  <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+                </svg>
+              </button>
+              <div class="chat-header-avatar">
+                <div class="chat-header-avatar-inner">{roomId[0].toUpperCase()}</div>
+              </div>
+              <div class="chat-header-info">
+                <div class="chat-header-name">{isDmRoom ? (sidebarRooms().find(r => r.id === roomId)?.name || 'Direct Message') : ('#' + roomId)}</div>
+                <div class="chat-header-meta">
+                  {isDmRoom ? (
+                    <span class="chat-header-online">
+                      <span class="dot" style={`width:6px;height:6px;animation:none;background:${dmPartnerOnline() ? 'var(--success)' : 'var(--muted)'}`}></span>
+                      {dmPartnerOnline() ? 'Online' : 'Offline'}
+                    </span>
+                  ) : (
+                    <>
+                      <span>{onlineUsers().length} member{onlineUsers().length !== 1 ? 's' : ''}</span>
+                      <span class="chat-header-online">
+                        <span class="dot ok" style="width:6px;height:6px;animation:none;"></span>
+                        {onlineUsers().length} online
+                      </span>
+                    </>
                   )}
-                  <div class="message-bubble" style={{ 
-                    'border-left': pinnedMessages().has(msg.id) ? '4px solid #ffa657' : undefined,
-                    'padding-left': pinnedMessages().has(msg.id) ? '12px' : undefined,
-                  }}>
-                    {pinnedMessages().has(msg.id) && (
-                      <div style={{ 
-                        'font-size': '11px', 
-                        color: '#ffa657', 
-                        'font-weight': '600',
-                        'margin-bottom': '4px',
-                        display: 'flex',
-                        'align-items': 'center',
-                        gap: '4px',
-                      }}>
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M9.828 1.172a.5.5 0 0 1 0 .707l-1.293 1.293.707.707a.5.5 0 0 1 0 .707l-.707.707a.5.5 0 0 1-.707 0l-.707-.707-5.657 5.657a.5.5 0 0 1-.707 0l-.707-.707a.5.5 0 0 1 0-.707l5.657-5.657-.707-.707a.5.5 0 0 1 0-.707l.707-.707a.5.5 0 0 1 .707 0l.707.707 1.293-1.293a.5.5 0 0 1 .707 0zM9.828 8a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-5a.5.5 0 0 1 .5-.5h3z"/>
-                        </svg>
-                        <span>Pinned</span>
-                        <span style={{ opacity: 0.6, 'font-size': '9px', 'font-weight': '400' }}>
-                          (ID: {msg.id.substring(0, 8)})
-                        </span>
-                      </div>
-                    )}
-                    {!isMe && <div class="sender-name">{getDisplayName(msg.sender_email)}</div>}
-                    
-                    {msg.reply_to_content && (
-                      <div class="reply-preview">
-                        <div class="reply-preview-sender">{msg.reply_to_sender ? getDisplayName(msg.reply_to_sender) : 'Unknown'}</div>
-                        <div class="reply-preview-content">{msg.reply_to_content.substring(0, 50)}{msg.reply_to_content.length > 50 ? '...' : ''}</div>
-                      </div>
-                    )}
-
-                    {msg.image_url && (
-                      <div class="message-image">
-                        <img src={msg.image_url} alt="Shared image" />
-                      </div>
-                    )}
-                    
-                    <Show when={editingMessage()?.id === msg.id} fallback={
-                      <>
-                        {msg.content && <div class="message-content">{msg.content}</div>}
-                        {msg.edited_at && <div class="edited-badge" style={{ 'font-size': '11px', color: '#8b949e', 'margin-top': '2px' }}>(edited)</div>}
-                      </>
-                    }>
-                      <div class="edit-message-form">
-                        <textarea
-                          value={editInput()}
-                          onInput={(e) => setEditInput(e.currentTarget.value)}
-                          class="edit-textarea"
-                          style={{ width: '100%', padding: '8px', 'border-radius': '6px', border: '1px solid #30363d', background: '#0d1117', color: '#c9d1d9', 'font-family': 'inherit', resize: 'vertical', 'min-height': '60px' }}
-                        />
-                        <div style={{ display: 'flex', gap: '8px', 'margin-top': '8px' }}>
-                          <button onClick={sendEditMessage} type="button" style={{ padding: '4px 12px', 'border-radius': '6px', border: 'none', background: '#238636', color: 'white', cursor: 'pointer' }}>Save</button>
-                          <button onClick={cancelEdit} type="button" style={{ padding: '4px 12px', 'border-radius': '6px', border: 'none', background: '#21262d', color: '#c9d1d9', cursor: 'pointer' }}>Cancel</button>
-                        </div>
-                      </div>
-                    </Show>
-
-                    {/* Reactions */}
-                    <Show when={msg.reactions && msg.reactions.length > 0}>
-                      <div class="message-reactions" style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '4px', 'margin-top': '6px' }}>
-                        <For each={(() => {
-                          // Group reactions by emoji
-                          const grouped = new Map<string, {emoji: string, users: Array<{id: string, email: string}>}>();
-                          (msg.reactions || []).forEach(r => {
-                            if (!grouped.has(r.emoji)) {
-                              grouped.set(r.emoji, { emoji: r.emoji, users: [] });
-                            }
-                            grouped.get(r.emoji)!.users.push({ id: r.user_id, email: r.user_email });
-                          });
-                          return Array.from(grouped.values());
-                        })()}>
-                          {(reactionGroup) => {
-                            const hasReacted = reactionGroup.users.some(u => u.id === myUserId);
-                            return (
-                              <button
-                                class="reaction-bubble"
-                                onClick={() => hasReacted ? removeReaction(msg.id, reactionGroup.emoji) : addReaction(msg.id, reactionGroup.emoji)}
-                                title={reactionGroup.users.map(u => u.email).join(', ')}
-                                style={{
-                                  padding: '2px 8px',
-                                  'border-radius': '12px',
-                                  border: hasReacted ? '1px solid #238636' : '1px solid #30363d',
-                                  background: hasReacted ? '#0d4429' : '#161b22',
-                                  color: '#c9d1d9',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  'align-items': 'center',
-                                  gap: '4px',
-                                  'font-size': '13px',
-                                }}
-                              >
-                                <span>{reactionGroup.emoji}</span>
-                                <span style={{ 'font-size': '11px', color: '#8b949e' }}>{reactionGroup.users.length}</span>
-                              </button>
-                            );
-                          }}
-                        </For>
-                      </div>
-                    </Show>
-                    
-                    <div class="message-time">
-                      {formatTime(msg.created_at)}
-                      {isMe && (() => {
-                        // Access signals directly to trigger reactivity
-                        const _ = readReceiptsVersion();
-                        const allReceipts = readReceipts();
-                        const readers = allReceipts.get(msg.id);
-                        const readersArray = readers ? Array.from(readers) : [];
-                        const otherReaders = readersArray.filter(readerId => readerId !== msg.sender_id);
-                        const readStatus = otherReaders.length > 0;
-                        
-                        console.log(`[RENDER] Msg ${msg.id.substring(0,8)}: sender=${msg.sender_id.substring(0,8)}, readers=[${readersArray.map(r => r.substring(0,8)).join(',')}], otherReaders=[${otherReaders.map(r => r.substring(0,8)).join(',')}], isRead=${readStatus}, version=${_}`);
-                        return (
-                          <span class="read-receipt" style={{ 'margin-left': '6px', color: readStatus ? '#34b7f1' : '#8b949e' }}>
-                            {readStatus ? <CheckDoubleIcon /> : <CheckIcon />}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  </div>
                 </div>
-              );
-            }}
-          </For>
-          {typing() && <div class="typing-indicator">{typing()}</div>}
-        </div>
-
-        <Show when={replyingTo()}>
-          <div class="reply-bar">
-            <div class="reply-bar-content">
-              <div class="reply-bar-icon"><ReplyIcon /></div>
-              <div>
-                <div class="reply-bar-sender">{replyingTo()?.sender_email ? getDisplayName(replyingTo()!.sender_email) : 'Unknown'}</div>
-                <div class="reply-bar-text">{replyingTo()?.content?.substring(0, 50)}{(replyingTo()?.content?.length || 0) > 50 ? '...' : ''}</div>
               </div>
             </div>
-            <button class="reply-bar-close" onClick={cancelReply} type="button">×</button>
-          </div>
-        </Show>
-
-        <Show when={imagePreview()}>
-          <div class="image-preview-container">
-            <div class="image-preview">
-              <img src={imagePreview()!} alt="Preview" />
-              <button class="remove-image-btn" onClick={removeImage} type="button">×</button>
+            <div class="chat-header-actions">
+              <button class="header-action-btn" onClick={shareRoom} title={showCopied() ? 'Copied!' : 'Copy link'}>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+              <button class="header-action-btn" onClick={() => startCallFlow('voice')} title="Voice call">
+                <PhoneIcon />
+              </button>
+              <button class="header-action-btn" onClick={() => startCallFlow('video')} title="Video call">
+                <VideoIcon />
+              </button>
+              <button class="header-action-btn" onClick={() => setShowSearch(true)} title="Search">
+                <SearchIcon />
+              </button>
+              <button
+                class={'header-action-btn' + (showRightPanel() ? ' active' : '')}
+                onClick={() => { setRightPanelMode('room'); setShowRightPanel(p => !p); }}
+                title={isDmRoom ? 'Contact Info' : 'Room Info'}
+              >
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+              </button>
             </div>
           </div>
-        </Show>
 
-        {/* Context Menu */}
-        <Show when={contextMenu()}>
-          {(menu) => {
-            const msg = menu().message;
-            const isMe = msg.sender_id === myUserId;
-            return (
-              <>
-                <div 
-                  class="context-menu-overlay" 
-                  onClick={closeContextMenu}
-                  style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    'z-index': 1000,
-                  }}
-                />
-                <div 
-                  class="context-menu"
-                  style={{
-                    position: 'fixed',
-                    top: `${menu().y}px`,
-                    left: `${menu().x}px`,
-                    background: '#161b22',
-                    border: '1px solid #30363d',
-                    'border-radius': '8px',
-                    'box-shadow': '0 8px 24px rgba(0,0,0,0.5)',
-                    'z-index': 1001,
-                    'min-width': '180px',
-                    overflow: 'hidden',
-                  }}
-                >
+          {/* Connection status bar */}
+          <Show when={status() !== 'connected'}>
+            <div class={'connection-status-bar' + (status() === 'disconnected' ? ' error' : '')}>
+              <span class="dot" style={status() === 'connecting' ? 'background:#ffa657;' : ''}></span>
+              {status() === 'connecting' ? 'Connecting...' : 'Disconnected â€” messages won\'t update'}
+            </div>
+          </Show>
+
+          {/* â”€â”€ chat-container (pinned + messages + input) â”€â”€ */}
+          <div class="chat-container">
+
+          {/* Pinned Messages Section */}
+          <Show when={(() => { const pinned = messages().filter(m => pinnedMessages().has(m.id)); return pinned.length > 0; })()}>
+            <div style={{ background: 'rgba(255,166,87,0.1)', 'border-bottom': '1px solid rgba(255,166,87,0.3)', padding: '8px 16px', 'font-size': '13px', color: '#ffa657', display: 'flex', 'align-items': 'center', gap: '8px', 'flex-wrap': 'wrap' }}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M9.828 1.172a.5.5 0 0 1 0 .707l-1.293 1.293.707.707a.5.5 0 0 1 0 .707l-.707.707a.5.5 0 0 1-.707 0l-.707-.707-5.657 5.657a.5.5 0 0 1-.707 0l-.707-.707a.5.5 0 0 1 0-.707l5.657-5.657-.707-.707a.5.5 0 0 1 0-.707l.707-.707a.5.5 0 0 1 .707 0l.707.707 1.293-1.293a.5.5 0 0 1 .707 0zM9.828 8a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-5a.5.5 0 0 1 .5-.5h3z"/>
+              </svg>
+              <span style={{ 'font-weight': '600' }}>{messages().filter(m => pinnedMessages().has(m.id)).length} pinned</span>
+              <For each={messages().filter(m => pinnedMessages().has(m.id))}>
+                {(pinnedMsg) => (
                   <button
-                    class="context-menu-item"
-                    onClick={() => {
-                      setReplyingTo(msg);
-                      closeContextMenu();
-                    }}
-                    style={{
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '12px',
-                      width: '100%',
-                      padding: '10px 16px',
-                      background: 'none',
-                      border: 'none',
-                      color: '#c9d1d9',
-                      cursor: 'pointer',
-                      'font-size': '14px',
-                      'text-align': 'left',
-                      transition: 'background 0.2s',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                    onClick={() => { const el = document.getElementById(`msg-${pinnedMsg.id}`); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.animation = 'highlight 1s ease'; setTimeout(() => { el.style.animation = ''; }, 1000); } }}
+                    style={{ background: 'rgba(255,166,87,0.2)', border: '1px solid rgba(255,166,87,0.4)', 'border-radius': '12px', padding: '4px 10px', color: '#ffa657', cursor: 'pointer', 'font-size': '12px' }}
                   >
-                    <ReplyIcon />
-                    <span>Reply</span>
-                  </button>
-
-                  <button
-                    class="context-menu-item"
-                    onClick={() => copyMessage(msg)}
-                    style={{
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '12px',
-                      width: '100%',
-                      padding: '10px 16px',
-                      background: 'none',
-                      border: 'none',
-                      color: '#c9d1d9',
-                      cursor: 'pointer',
-                      'font-size': '14px',
-                      'text-align': 'left',
-                      transition: 'background 0.2s',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>
-                      <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
-                    </svg>
-                    <span>Copy Message</span>
-                  </button>
-
-                  <button
-                    class="context-menu-item"
-                    onClick={() => togglePinMessage(msg.id)}
-                    style={{
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '12px',
-                      width: '100%',
-                      padding: '10px 16px',
-                      background: 'none',
-                      border: 'none',
-                      color: '#c9d1d9',
-                      cursor: 'pointer',
-                      'font-size': '14px',
-                      'text-align': 'left',
-                      transition: 'background 0.2s',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                      {pinnedMessages().has(msg.id) ? (
-                        <path d="M9.828 2.172a.5.5 0 0 1 0 .707L8.536 4.172l.707.707a.5.5 0 0 1 0 .707L8.536 6.293a.5.5 0 0 1-.707 0l-.707-.707-5.657 5.657a.5.5 0 0 1-.707 0l-.707-.707a.5.5 0 0 1 0-.707l5.657-5.657-.707-.707a.5.5 0 0 1 0-.707l.707-.707a.5.5 0 0 1 .707 0l.707.707 1.293-1.293a.5.5 0 0 1 .707 0z"/>
-                      ) : (
-                        <path d="M9.828 1.172a.5.5 0 0 1 0 .707l-1.293 1.293.707.707a.5.5 0 0 1 0 .707l-.707.707a.5.5 0 0 1-.707 0l-.707-.707-5.657 5.657a.5.5 0 0 1-.707 0l-.707-.707a.5.5 0 0 1 0-.707l5.657-5.657-.707-.707a.5.5 0 0 1 0-.707l.707-.707a.5.5 0 0 1 .707 0l.707.707 1.293-1.293a.5.5 0 0 1 .707 0zM9.828 8a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-5a.5.5 0 0 1 .5-.5h3z"/>
-                      )}
-                    </svg>
-                    <span>{pinnedMessages().has(msg.id) ? 'Unpin Message' : 'Pin Message'}</span>
-                  </button>
-
-                  <button
-                    class="context-menu-item"
-                    onClick={() => {
-                      setShowReactionPicker(msg.id);
-                      setReactionPickerPos({ x: menu().x, y: menu().y });
-                      closeContextMenu();
-                    }}
-                    style={{
-                      display: 'flex',
-                      'align-items': 'center',
-                      gap: '12px',
-                      width: '100%',
-                      padding: '10px 16px',
-                      background: 'none',
-                      border: 'none',
-                      color: '#c9d1d9',
-                      cursor: 'pointer',
-                      'font-size': '14px',
-                      'text-align': 'left',
-                      transition: 'background 0.2s',
-                      'border-top': '1px solid #30363d',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                  >
-                    <span style={{ 'font-size': '18px' }}>😊</span>
-                    <span>Add Reaction</span>
-                  </button>
-
-                  <Show when={isMe}>
-                    <button
-                      class="context-menu-item"
-                      onClick={() => {
-                        startEditMessage(msg);
-                        closeContextMenu();
-                      }}
-                      style={{
-                        display: 'flex',
-                        'align-items': 'center',
-                        gap: '12px',
-                        width: '100%',
-                        padding: '10px 16px',
-                        background: 'none',
-                        border: 'none',
-                        color: '#c9d1d9',
-                        cursor: 'pointer',
-                        'font-size': '14px',
-                        'text-align': 'left',
-                        transition: 'background 0.2s',
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                    >
-                      <EditIcon />
-                      <span>Edit</span>
-                    </button>
-
-                    <button
-                      class="context-menu-item"
-                      onClick={() => {
-                        deleteMessage(msg.id);
-                        closeContextMenu();
-                      }}
-                      style={{
-                        display: 'flex',
-                        'align-items': 'center',
-                        gap: '12px',
-                        width: '100%',
-                        padding: '10px 16px',
-                        background: 'none',
-                        border: 'none',
-                        color: '#f85149',
-                        cursor: 'pointer',
-                        'font-size': '14px',
-                        'text-align': 'left',
-                        transition: 'background 0.2s',
-                        'border-top': '1px solid #30363d',
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                    >
-                      <TrashIcon />
-                      <span>Delete</span>
-                    </button>
-                  </Show>
-                </div>
-              </>
-            );
-          }}
-        </Show>
-
-        {/* Reaction Picker - Outside context menu scope */}
-        <Show when={showReactionPicker() && reactionPickerPos()}>
-          <>
-            <div 
-              class="reaction-picker-overlay"
-              onClick={() => {
-                setShowReactionPicker(null);
-                setReactionPickerPos(null);
-              }}
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                'z-index': 1002,
-              }}
-            />
-            <div 
-              class="reaction-picker"
-              style={{
-                position: 'fixed',
-                top: `${reactionPickerPos()!.y + 40}px`,
-                left: `${reactionPickerPos()!.x}px`,
-                background: '#161b22',
-                border: '1px solid #30363d',
-                'border-radius': '8px',
-                padding: '8px',
-                display: 'flex',
-                gap: '4px',
-                'box-shadow': '0 8px 24px rgba(0,0,0,0.5)',
-                'z-index': 1003,
-              }}
-            >
-              <For each={['👍', '❤️', '😂', '😮', '😢', '🎉']}>
-                {(emoji) => (
-                  <button
-                    onClick={() => {
-                      const msgId = showReactionPicker();
-                      if (msgId) {
-                        addReaction(msgId, emoji);
-                      }
-                      setShowReactionPicker(null);
-                      setReactionPickerPos(null);
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      'font-size': '24px',
-                      cursor: 'pointer',
-                      padding: '4px',
-                      'border-radius': '4px',
-                      transition: 'background 0.2s',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-                  >
-                    {emoji}
+                    {pinnedMsg.content.substring(0, 30)}{pinnedMsg.content.length > 30 ? '...' : ''}
                   </button>
                 )}
               </For>
             </div>
-          </>
-        </Show>
+          </Show>
 
-        {/* Copied Toast */}
-        <Show when={showCopiedToast()}>
-          <div style={{
-            position: 'fixed',
-            bottom: '100px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#238636',
-            color: 'white',
-            padding: '10px 20px',
-            'border-radius': '8px',
-            'box-shadow': '0 4px 12px rgba(0,0,0,0.3)',
-            'z-index': 2000,
-            animation: 'fadeInOut 2s ease-in-out',
-            'font-size': '14px',
-            'font-weight': '500',
-          }}>
-            ✓ Message copied!
+          <div class="messages-container" ref={messagesContainer}>
+            <For each={messages()} fallback={<div style="text-align:center;padding:60px 20px;color:var(--muted);font-size:14px;">No messages yet. Say hello! 👋</div>}>
+              {(msg) => {
+                const isMe = msg.sender_id === myUserId;
+                const initials = getInitials(msg.sender_email);
+                return (
+                  <div
+                    class={'message-row ' + (isMe ? 'me' : 'other')}
+                    id={`msg-${msg.id}`}
+                    onContextMenu={(e) => handleContextMenu(e, msg)}
+                    onTouchStart={(e) => handleLongPressStart(e, msg)}
+                    onTouchEnd={handleLongPressEnd}
+                    onTouchMove={handleLongPressEnd}
+                  >
+                    {!isMe && (
+                      <div class="message-avatar">
+                        <button
+                          style="background:none;border:none;padding:0;cursor:pointer;width:100%;height:100%;border-radius:50%;"
+                          onClick={() => {
+                            setSelectedContact({ email: msg.sender_email, avatar: msg.sender_avatar, userId: msg.sender_id });
+                            setRightPanelMode('contact');
+                            setShowRightPanel(true);
+                          }}
+                          title={`View ${getDisplayName(msg.sender_email)}'s profile`}
+                        >
+                          {msg.sender_avatar ? (
+                            <img src={msg.sender_avatar} alt={msg.sender_email} style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />
+                          ) : (
+                            <div class="avatar-placeholder">{initials}</div>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                    <div class="message-bubble" style={{ 'border-left': pinnedMessages().has(msg.id) ? '4px solid #ffa657' : undefined, 'padding-left': pinnedMessages().has(msg.id) ? '12px' : undefined }}>
+                      {pinnedMessages().has(msg.id) && (
+                        <div style={{ 'font-size': '11px', color: '#ffa657', 'font-weight': '600', 'margin-bottom': '4px', display: 'flex', 'align-items': 'center', gap: '4px' }}>
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828 1.172a.5.5 0 0 1 0 .707l-1.293 1.293.707.707a.5.5 0 0 1 0 .707l-.707.707a.5.5 0 0 1-.707 0l-.707-.707-5.657 5.657a.5.5 0 0 1-.707 0l-.707-.707a.5.5 0 0 1 0-.707l5.657-5.657-.707-.707a.5.5 0 0 1 0-.707l.707-.707a.5.5 0 0 1 .707 0l.707.707 1.293-1.293a.5.5 0 0 1 .707 0z"/></svg>
+                          <span>Pinned</span>
+                        </div>
+                      )}
+                      {!isMe && <div class="sender-name">{getDisplayName(msg.sender_email)}</div>}
+                      {msg.reply_to_content && (
+                        <div class="reply-preview">
+                          <div class="reply-preview-sender">{msg.reply_to_sender ? getDisplayName(msg.reply_to_sender) : 'Unknown'}</div>
+                          <div class="reply-preview-content">{msg.reply_to_content.substring(0, 50)}{msg.reply_to_content.length > 50 ? '...' : ''}</div>
+                        </div>
+                      )}
+                      {msg.image_url && (
+                        <div class="message-image"><img src={msg.image_url} alt="Shared image" /></div>
+                      )}
+                      <Show when={editingMessage()?.id === msg.id} fallback={
+                        <>
+                          {msg.content && <div class="message-content">{msg.content}</div>}
+                          {msg.edited_at && <div style={{ 'font-size': '11px', color: '#8b949e', 'margin-top': '2px' }}>(edited)</div>}
+                        </>
+                      }>
+                        <div class="edit-message-form">
+                          <textarea value={editInput()} onInput={(e) => setEditInput(e.currentTarget.value)} style={{ width: '100%', padding: '8px', 'border-radius': '6px', border: '1px solid #30363d', background: '#0d1117', color: '#c9d1d9', 'font-family': 'inherit', resize: 'vertical', 'min-height': '60px' }} />
+                          <div style={{ display: 'flex', gap: '8px', 'margin-top': '8px' }}>
+                            <button onClick={sendEditMessage} type="button" style={{ padding: '4px 12px', 'border-radius': '6px', border: 'none', background: '#238636', color: 'white', cursor: 'pointer' }}>Save</button>
+                            <button onClick={cancelEdit} type="button" style={{ padding: '4px 12px', 'border-radius': '6px', border: 'none', background: '#21262d', color: '#c9d1d9', cursor: 'pointer' }}>Cancel</button>
+                          </div>
+                        </div>
+                      </Show>
+                      <Show when={msg.reactions && msg.reactions.length > 0}>
+                        <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '4px', 'margin-top': '6px' }}>
+                          <For each={(() => { const grouped = new Map<string, {emoji: string, users: Array<{id: string, email: string}>}>(); (msg.reactions || []).forEach(r => { if (!grouped.has(r.emoji)) grouped.set(r.emoji, { emoji: r.emoji, users: [] }); grouped.get(r.emoji)!.users.push({ id: r.user_id, email: r.user_email }); }); return Array.from(grouped.values()); })()}>
+                            {(rg) => {
+                              const hasReacted = rg.users.some(u => u.id === myUserId);
+                              return (
+                                <button onClick={() => hasReacted ? removeReaction(msg.id, rg.emoji) : addReaction(msg.id, rg.emoji)} title={rg.users.map(u => u.email).join(', ')}
+                                  style={{ padding: '2px 8px', 'border-radius': '12px', border: hasReacted ? '1px solid #238636' : '1px solid #30363d', background: hasReacted ? '#0d4429' : '#161b22', color: '#c9d1d9', cursor: 'pointer', display: 'flex', 'align-items': 'center', gap: '4px', 'font-size': '13px' }}>
+                                  <span>{rg.emoji}</span><span style={{ 'font-size': '11px', color: '#8b949e' }}>{rg.users.length}</span>
+                                </button>
+                              );
+                            }}
+                          </For>
+                        </div>
+                      </Show>
+                      <div class="message-time">
+                        {formatTime(msg.created_at)}
+                        {isMe && (() => {
+                          const _ = readReceiptsVersion();
+                          const readers = readReceipts().get(msg.id);
+                          const otherReaders = (readers ? Array.from(readers) : []).filter(r => r !== msg.sender_id);
+                          const readStatus = otherReaders.length > 0;
+                          return (
+                            <span class="read-receipt" style={{ 'margin-left': '6px', color: readStatus ? '#34b7f1' : '#8b949e' }}>
+                              {readStatus ? <CheckDoubleIcon /> : <CheckIcon />}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }}
+            </For>
+            {typing() && <div class="typing-indicator">{typing()}</div>}
           </div>
+
+          <Show when={replyingTo()}>
+            <div class="reply-bar">
+              <div class="reply-bar-content">
+                <div class="reply-bar-icon"><ReplyIcon /></div>
+                <div>
+                  <div class="reply-bar-sender">{replyingTo()?.sender_email ? getDisplayName(replyingTo()!.sender_email) : 'Unknown'}</div>
+                  <div class="reply-bar-text">{replyingTo()?.content?.substring(0, 50)}{(replyingTo()?.content?.length || 0) > 50 ? '...' : ''}</div>
+                </div>
+              </div>
+              <button class="reply-bar-close" onClick={cancelReply} type="button">×</button>
+            </div>
+          </Show>
+
+          <Show when={imagePreview()}>
+            <div class="image-preview-container">
+              <div class="image-preview">
+                <img src={imagePreview()!} alt="Preview" />
+                <button class="remove-image-btn" onClick={removeImage} type="button">×</button>
+              </div>
+            </div>
+          </Show>
+
+          {/* Context Menu */}
+          <Show when={contextMenu()}>
+            <div>
+              <div class="context-menu-overlay" onClick={closeContextMenu} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 'z-index': 1000 }} />
+              <div class="context-menu" style={{ position: 'fixed', top: `${contextMenu()!.y}px`, left: `${contextMenu()!.x}px`, background: '#161b22', border: '1px solid #30363d', 'border-radius': '8px', 'box-shadow': '0 8px 24px rgba(0,0,0,0.5)', 'z-index': 1001, 'min-width': '180px', overflow: 'hidden' }}>
+                <button class="context-menu-item" onClick={() => { setReplyingTo(contextMenu()!.message); closeContextMenu(); }} style={{ display: 'flex', 'align-items': 'center', gap: '12px', width: '100%', padding: '10px 16px', background: 'none', border: 'none', color: '#c9d1d9', cursor: 'pointer', 'font-size': '14px', 'text-align': 'left' }} onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.background = 'none'}><ReplyIcon /><span>Reply</span></button>
+                <button class="context-menu-item" onClick={() => copyMessage(contextMenu()!.message)} style={{ display: 'flex', 'align-items': 'center', gap: '12px', width: '100%', padding: '10px 16px', background: 'none', border: 'none', color: '#c9d1d9', cursor: 'pointer', 'font-size': '14px', 'text-align': 'left' }} onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.background = 'none'}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z" /><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" /></svg>
+                  <span>Copy Message</span>
+                </button>
+                <button class="context-menu-item" onClick={() => togglePinMessage(contextMenu()!.message.id)} style={{ display: 'flex', 'align-items': 'center', gap: '12px', width: '100%', padding: '10px 16px', background: 'none', border: 'none', color: '#c9d1d9', cursor: 'pointer', 'font-size': '14px', 'text-align': 'left' }} onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.background = 'none'}>
+                  <span style={{ 'font-size': '14px' }}>{'📌'}</span>
+                  <span>{pinnedMessages().has(contextMenu()!.message.id) ? 'Unpin' : 'Pin Message'}</span>
+                </button>
+                <button class="context-menu-item" onClick={() => { setShowReactionPicker(contextMenu()!.message.id); setReactionPickerPos({ x: contextMenu()!.x, y: contextMenu()!.y }); closeContextMenu(); }} style={{ display: 'flex', 'align-items': 'center', gap: '12px', width: '100%', padding: '10px 16px', background: 'none', border: 'none', color: '#c9d1d9', cursor: 'pointer', 'font-size': '14px', 'text-align': 'left', 'border-top': '1px solid #30363d' }} onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.background = 'none'}><span>{'😊'}</span><span>Add Reaction</span></button>
+                <Show when={contextMenu()!.message.sender_id === myUserId}>
+                  <div>
+                    <button class="context-menu-item" onClick={() => { startEditMessage(contextMenu()!.message); closeContextMenu(); }} style={{ display: 'flex', 'align-items': 'center', gap: '12px', width: '100%', padding: '10px 16px', background: 'none', border: 'none', color: '#c9d1d9', cursor: 'pointer', 'font-size': '14px', 'text-align': 'left' }} onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.background = 'none'}><EditIcon /><span>Edit</span></button>
+                    <button class="context-menu-item" onClick={() => { deleteMessage(contextMenu()!.message.id); closeContextMenu(); }} style={{ display: 'flex', 'align-items': 'center', gap: '12px', width: '100%', padding: '10px 16px', background: 'none', border: 'none', color: '#f85149', cursor: 'pointer', 'font-size': '14px', 'text-align': 'left', 'border-top': '1px solid #30363d' }} onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.background = 'none'}><TrashIcon /><span>Delete</span></button>
+                  </div>
+                </Show>
+              </div>
+            </div>
+          </Show>
+
+          {/* Reaction Picker */}
+          <Show when={showReactionPicker() && reactionPickerPos()}>
+            <div>
+              <div class="reaction-picker-overlay" onClick={() => { setShowReactionPicker(null); setReactionPickerPos(null); }} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 'z-index': 1002 }} />
+              <div class="reaction-picker" style={{ position: 'fixed', top: `${reactionPickerPos()!.y + 40}px`, left: `${reactionPickerPos()!.x}px`, background: '#161b22', border: '1px solid #30363d', 'border-radius': '8px', padding: '8px', display: 'flex', gap: '4px', 'box-shadow': '0 8px 24px rgba(0,0,0,0.5)', 'z-index': 1003 }}>
+                <For each={['👍', '❤️', '😂', '😮', '😢', '🎉']}>
+                  {(emoji) => (
+                    <button onClick={() => { const msgId = showReactionPicker(); if (msgId) addReaction(msgId, emoji); setShowReactionPicker(null); setReactionPickerPos(null); }} style={{ background: 'none', border: 'none', 'font-size': '24px', cursor: 'pointer', padding: '4px', 'border-radius': '4px' }} onMouseEnter={(e) => e.currentTarget.style.background = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.background = 'none'}>{emoji}</button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+
+          {/* Copied Toast */}
+          <Show when={showCopiedToast()}>
+            <div style={{ position: 'fixed', bottom: '100px', left: '50%', transform: 'translateX(-50%)', background: '#238636', color: 'white', padding: '10px 20px', 'border-radius': '8px', 'box-shadow': '0 4px 12px rgba(0,0,0,0.3)', 'z-index': 2000, animation: 'fadeInOut 2s ease-in-out', 'font-size': '14px', 'font-weight': '500' }}>
+              Message copied!
+            </div>
+          </Show>
+
+          {/* Message Input */}
+          <form class="input-container" onSubmit={sendMessage}>
+            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} style="display:none;" />
+            <button class="btn btn-ghost icon-btn" type="button" onClick={() => fileInputRef?.click()} disabled={status() !== 'connected'} title="Upload image"><ImageIcon /></button>
+            <button class="btn btn-ghost icon-btn" type="button" onClick={() => setShowEmojiPicker(!showEmojiPicker())} disabled={status() !== 'connected'} title="Add emoji"><SmileIcon /></button>
+            <input class="message-input" type="text" placeholder="Let's talk about something..." value={input()} onInput={(e) => onInputChange(e.currentTarget.value)} disabled={status() !== 'connected'} />
+            <button class="btn btn-primary send-btn" type="submit" disabled={status() !== 'connected' || (!input().trim() && !imagePreview())} title="Send message"><SendIcon /></button>
+          </form>
+
+          </div>{/* end chat-container */}
+        </main>
+
+        {/* Right Info Panel */}
+        <Show when={showRightPanel()}>
+          <aside class="right-panel">
+            <div class="right-panel-header">
+              <span class="right-panel-title">{rightPanelMode() === 'contact' ? 'Contact Info' : isDmRoom ? 'Contact Information' : 'Room Information'}</span>
+              <button class="right-panel-close" onClick={() => setShowRightPanel(false)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+
+            {/* DM Room Panel */}
+            <Show when={isDmRoom && rightPanelMode() === 'room'}>
+              <div class="right-panel-body">
+                <div class="contact-avatar-wrap">
+                  <div class="contact-avatar-placeholder">{dmPartnerName()[0]?.toUpperCase() || '?'}</div>
+                  <div class="contact-online-dot" style={`background:${dmPartnerOnline() ? 'var(--success)' : 'var(--muted)'};`}></div>
+                </div>
+                <h3 class="contact-name">{dmPartnerName()}</h3>
+                <p class="contact-email-text">{dmPartnerEmail()}</p>
+                <div class="dm-status-badge" style={dmPartnerOnline() ? 'color:var(--success);border-color:rgba(52,211,153,0.25);background:rgba(52,211,153,0.08);' : ''}>
+                  <span class="dot" style={`width:8px;height:8px;animation:none;background:${dmPartnerOnline() ? 'var(--success)' : 'var(--muted)'}`}></span>
+                  {dmPartnerOnline() ? 'Online sekarang' : 'Sedang offline'}
+                </div>
+                <div class="contact-call-actions" style="margin-top:16px;">
+                  <button class="contact-action-btn" onClick={() => startCallFlow('voice')} title="Voice Call">
+                    <PhoneIcon /><span>Voice</span>
+                  </button>
+                  <button class="contact-action-btn" onClick={() => startCallFlow('video')} title="Video Call">
+                    <VideoIcon /><span>Video</span>
+                  </button>
+                </div>
+              </div>
+            </Show>
+
+            {/* Group Room Panel */}
+            <Show when={!isDmRoom && rightPanelMode() === 'room'}>
+              <div class="right-panel-body">
+                <div class="right-panel-avatar-wrap">
+                  <div class="right-panel-avatar"><div class="right-panel-avatar-inner">{roomId[0].toUpperCase()}</div></div>
+                </div>
+                <h3 class="right-panel-room-name">#{roomId}</h3>
+                <p class="right-panel-room-count">{onlineUsers().length} member{onlineUsers().length !== 1 ? 's' : ''}</p>
+
+                <div class="right-panel-section">
+                  <div class="right-panel-section-header">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    <span>About This Room</span>
+                    <button class="section-more-btn">···</button>
+                  </div>
+                  <p class="right-panel-section-text">A place for conversations, sharing ideas, and staying connected with your team.</p>
+                </div>
+
+                <div class="right-panel-section">
+                  <div class="right-panel-section-header">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                    <span>Members Online ({onlineUsers().length})</span>
+                  </div>
+                  <div class="member-list">
+                    <For each={onlineUsers()} fallback={<p style="font-size:13px;color:var(--muted);text-align:center;padding:12px 0;">No one online yet</p>}>
+                      {(user) => (
+                        <button class="member-item" onClick={() => { setSelectedContact({ email: user.email, userId: user.user_id }); setRightPanelMode('contact'); }}>
+                          <div class="member-avatar">{user.email[0].toUpperCase()}</div>
+                          <div class="member-info">
+                            <div class="member-name">{getDisplayName(user.email)}</div>
+                            <div class="member-status"><span class="dot ok" style="width:6px;height:6px;display:inline-block;"></span> Online</div>
+                          </div>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </div>
+
+                {/* Media Section */}
+                <div class="right-panel-section">
+                  <div class="right-panel-section-header">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    <span>Media</span>
+                    <button class="section-more-btn">···</button>
+                  </div>
+                  {(() => {
+                    const mediaMessages = messages().filter(m => m.image_url);
+                    const visible = mediaMessages.slice(-4);
+                    const extra = Math.max(0, mediaMessages.length - 4);
+                    return (
+                      <div class="media-grid">
+                        <For each={visible}>
+                          {(m) => (
+                            <div class="media-thumb">
+                              <img src={m.image_url!} alt="media" />
+                            </div>
+                          )}
+                        </For>
+                        <Show when={extra > 0}>
+                          <div class="media-thumb media-thumb-more">
+                            <span>+{extra}<br />More<br />Media</span>
+                          </div>
+                        </Show>
+                        <Show when={mediaMessages.length === 0}>
+                          <p style="font-size:12px;color:var(--muted);margin:0;padding:4px 0;">No shared media yet</p>
+                        </Show>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Files Section */}
+                <div class="right-panel-section">
+                  <div class="right-panel-section-header">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span>Files</span>
+                    <button class="section-more-btn">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </button>
+                    <button class="section-more-btn">···</button>
+                  </div>
+                  {(() => {
+                    const fileMessages = messages().filter(m => m.image_url).slice(-3);
+                    return fileMessages.length > 0 ? (
+                      <div class="file-list">
+                        <For each={fileMessages}>
+                          {(m) => (
+                            <div class="file-item">
+                              <div class="file-icon file-icon-img">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                              </div>
+                              <div class="file-info">
+                                <div class="file-name">image_{m.id.substring(0, 6)}.jpg</div>
+                                <div class="file-meta">{formatTime(m.created_at)} · {getDisplayName(m.sender_email)}</div>
+                              </div>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    ) : (
+                      <p style="font-size:12px;color:var(--muted);margin:0;padding:4px 0;">No files shared yet</p>
+                    );
+                  })()}
+                </div>
+
+                <div class="right-panel-section">
+                  <div class="right-panel-section-header">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>
+                    <span>Quick Actions</span>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                    <button class="btn btn-ghost" style="justify-content:flex-start;gap:10px;font-size:13px;" onClick={shareRoom}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      {showCopied() ? 'Copied!' : 'Copy Room Link'}
+                    </button>
+                    <a href="/create-room" class="btn btn-ghost" style="justify-content:flex-start;gap:10px;font-size:13px;">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      Create New Room
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </Show>
+
+            <Show when={rightPanelMode() === 'contact'}>
+              <div class="right-panel-body">
+                <button class="back-btn" onClick={() => setRightPanelMode('room')}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6" /></svg>
+                  {isDmRoom ? 'Back to Contact Info' : 'Back to Room Info'}
+                </button>
+                <div class="contact-avatar-wrap">
+                  <Show when={selectedContactAvatarUrl()} fallback={<div class="contact-avatar-placeholder">{(selectedContact()?.email || 'U')[0].toUpperCase()}</div>}>
+                    <img src={selectedContactAvatarUrl()!} alt="Avatar" class="contact-avatar-img" />
+                  </Show>
+                  <div class="contact-online-dot"></div>
+                </div>
+                <h3 class="contact-name">{selectedContact()?.email ? getDisplayName(selectedContact()!.email) : 'Unknown User'}</h3>
+                <p class="contact-email-text">{selectedContact()?.email || ''}</p>
+
+                <div class="contact-call-actions">
+                  <Show when={selectedContact()?.userId && selectedContact()!.userId !== myUserId}>
+                    <button class="contact-action-btn contact-dm-btn" onClick={() => navigateToDm(selectedContact()!.userId!, selectedContact()!.email)} title="Kirim Pesan Langsung">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                      <span>Pesan</span>
+                    </button>
+                  </Show>
+                  <button class="contact-action-btn" onClick={() => startCallFlow('voice')} title="Voice Call">
+                    <PhoneIcon /><span>Voice</span>
+                  </button>
+                  <button class="contact-action-btn" onClick={() => startCallFlow('video')} title="Video Call">
+                    <VideoIcon /><span>Video</span>
+                  </button>
+                </div>
+
+                <div class="right-panel-section">
+                  <div class="right-panel-section-header">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    <span>Contact Information</span>
+                  </div>
+                  <div class="contact-details">
+                    <div class="contact-detail-row">
+                      <span class="contact-detail-label">Email</span>
+                      <span class="contact-detail-value">{selectedContact()?.email || '-'}</span>
+                    </div>
+                    <div class="contact-detail-row">
+                      <span class="contact-detail-label">Display Name</span>
+                      <span class="contact-detail-value">{selectedContact()?.email ? getDisplayName(selectedContact()!.email) : '-'}</span>
+                    </div>
+                    <div class="contact-detail-row">
+                      <span class="contact-detail-label">Bio</span>
+                      <span class="contact-detail-value">
+                        {selectedContact()?.email && selectedContact()!.email === (localStorage.getItem('email') || '')
+                          ? (localStorage.getItem('bio') || '-')
+                          : '-'}
+                      </span>
+                    </div>
+                    <div class="contact-detail-row">
+                      <span class="contact-detail-label">Status</span>
+                      <span class="contact-detail-value" style="display:flex;align-items:center;gap:6px;">
+                        <span class="dot ok" style="width:8px;height:8px;flex-shrink:0;animation:none;"></span>Online
+                      </span>
+                    </div>
+                    <div class="contact-detail-row">
+                      <span class="contact-detail-label">User ID</span>
+                      <span class="contact-detail-value" style="font-family:monospace;font-size:11px;color:var(--muted);">{selectedContact()?.userId ? selectedContact()!.userId!.substring(0, 16) + '...' : '-'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Show>
+          </aside>
         </Show>
 
-        <form class="input-container" onSubmit={sendMessage}>
-          <input
-            type="file"
-            accept="image/*"
-            ref={fileInputRef}
-            onChange={handleImageSelect}
-            style="display: none;"
-          />
-          
-          <button 
-            class="btn btn-ghost icon-btn"
-            type="button"
-            onClick={() => fileInputRef?.click()}
-            disabled={status() !== 'connected'}
-            title="Upload image"
-          >
-            <ImageIcon />
-          </button>
+      </div>{/* end app-layout */}
 
-          <button 
-            class="btn btn-ghost icon-btn"
-            type="button"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker())}
-            disabled={status() !== 'connected'}
-            title="Add emoji"
-          >
-            <SmileIcon />
-          </button>
-
-          <input
-            class="message-input"
-            type="text"
-            placeholder="Type a message..."
-            value={input()}
-            onInput={(e) => onInputChange(e.currentTarget.value)}
-            disabled={status() !== 'connected'}
-          />
-          
-          <button 
-            class="btn btn-primary send-btn" 
-            type="submit"
-            disabled={status() !== 'connected' || (!input().trim() && !imagePreview())}
-            title="Send message"
-          >
-            <SendIcon />
-          </button>
-        </form>
-      </div>
+      {/* Floating Overlays */}
 
       <Show when={showEmojiPicker()}>
-        <EmojiPicker 
+        <EmojiPicker
           onSelect={addEmoji}
           onClose={() => setShowEmojiPicker(false)}
         />
       </Show>
 
       <Show when={showSearch()}>
-        <div class="search-overlay" onClick={(e) => {
-          if (e.target === e.currentTarget) setShowSearch(false);
-        }}>
+        <div class="search-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowSearch(false); }}>
           <div class="search-panel">
             <div class="search-header">
-              <input
-                class="search-input"
-                type="text"
-                placeholder="Search messages..."
-                value={searchQuery()}
-                onInput={(e) => {
-                  setSearchQuery(e.currentTarget.value);
-                  searchMessages();
-                }}
-                autofocus
-              />
-              <button 
-                class="btn btn-ghost"
-                onClick={() => {
-                  setShowSearch(false);
-                  setSearchQuery('');
-                  setSearchResults([]);
-                }}
-              >
-                Close
-              </button>
+              <input class="search-input" type="text" placeholder="Search messages..." value={searchQuery()} onInput={(e) => { setSearchQuery(e.currentTarget.value); searchMessages(); }} autofocus />
+              <button class="btn btn-ghost" onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]); }}>Close</button>
             </div>
             <div class="search-results">
-              <Show when={searchResults().length > 0}>
-                <p class="search-count">{searchResults().length} result{searchResults().length !== 1 ? 's' : ''} found</p>
-              </Show>
+              <Show when={searchResults().length > 0}><p class="search-count">{searchResults().length} result{searchResults().length !== 1 ? 's' : ''} found</p></Show>
               <For each={searchResults()}>
                 {(msg) => (
-                  <div 
-                    class="search-result-item"
-                    onClick={() => scrollToMessage(msg.id)}
-                  >
+                  <div class="search-result-item" onClick={() => scrollToMessage(msg.id)}>
                     <div class="search-result-sender">{getDisplayName(msg.sender_email)}</div>
                     <div class="search-result-content">{msg.content}</div>
                     <div class="search-result-time">{formatTime(msg.created_at)}</div>
                   </div>
                 )}
               </For>
-              <Show when={searchQuery() && searchResults().length === 0}>
-                <p class="search-empty">No messages found</p>
-              </Show>
+              <Show when={searchQuery() && searchResults().length === 0}><p class="search-empty">No messages found</p></Show>
             </div>
           </div>
         </div>
       </Show>
 
-      {/* Call User Selection Modal */}
+      {/* New DM Modal */}
+      <Show when={showNewDmModal()}>
+        <div class="modal-overlay" onClick={() => setShowNewDmModal(false)}>
+          <div class="modal-content dm-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 style="margin-bottom:4px;">Tambah Kontak / Pesan Langsung</h3>
+
+            {/* Tabs */}
+            <div class="dm-modal-tabs">
+              <button class={`dm-tab${dmModalTab() === 'friends' ? ' active' : ''}`} onClick={() => { setDmModalTab('friends'); loadFriendsForDm(); }}>Kontak</button>
+              <button class={`dm-tab${dmModalTab() === 'search' ? ' active' : ''}`} onClick={() => setDmModalTab('search')}>Cari / Tambah</button>
+              <button class={`dm-tab${dmModalTab() === 'online' ? ' active' : ''}`} onClick={() => setDmModalTab('online')}>Online</button>
+            </div>
+
+            {/* Friends list tab */}
+            <Show when={dmModalTab() === 'friends'}>
+              <div class="user-list" style="max-height:280px;overflow-y:auto;margin:12px 0;">
+                <Show when={friendsLoading()}>
+                  <p class="no-users">Memuat...</p>
+                </Show>
+                <For each={friendsList()}>
+                  {(f) => (
+                    <button class="user-item" onClick={() => { setShowNewDmModal(false); navigateToDm(f.user_id, f.email); }}>
+                      <div class="user-avatar" style="background:linear-gradient(135deg,#06b6d4,#0891b2);">
+                        {f.avatar_url
+                          ? <img src={f.avatar_url} style="width:100%;height:100%;border-radius:50%;object-fit:cover;"/>
+                          : getInitials(f.email)
+                        }
+                      </div>
+                      <div class="user-info">
+                        <div class="user-name">{getDisplayName(f.email)}</div>
+                        <div class="user-status" style="color:var(--muted)">{f.email}</div>
+                      </div>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </button>
+                  )}
+                </For>
+                <Show when={!friendsLoading() && friendsList().length === 0}>
+                  <p class="no-users">Belum ada kontak. Tambahkan lewat tab Cari / Tambah.</p>
+                </Show>
+              </div>
+              <a href="/contacts" class="btn btn-secondary" style="display:block;text-align:center;text-decoration:none;width:100%;margin-bottom:4px;padding:8px;">Kelola Kontak</a>
+            </Show>
+
+            {/* Search / Add tab */}
+            <Show when={dmModalTab() === 'search'}>
+              <div class="dm-search-section">
+                <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">Cari via email atau kode undangan:</p>
+                <div class="dm-search-row" style="margin-bottom:6px;">
+                  <input
+                    class="dm-search-input"
+                    type="text"
+                    placeholder="Email..."
+                    value={dmSearchEmail()}
+                    onInput={(e) => { setDmSearchEmail(e.currentTarget.value); setDmSearchCode(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') lookupUserByEmail(); }}
+                  />
+                </div>
+                <div class="dm-search-row" style="margin-bottom:10px;">
+                  <input
+                    class="dm-search-input"
+                    type="text"
+                    placeholder="Kode undangan (cth: AB12CD34)"
+                    value={dmSearchCode()}
+                    maxLength={8}
+                    style="font-family:monospace;text-transform:uppercase;"
+                    onInput={(e) => { setDmSearchCode(e.currentTarget.value.toUpperCase()); setDmSearchEmail(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') lookupUserByEmail(); }}
+                  />
+                  <button class="btn btn-primary dm-search-btn" onClick={lookupUserByEmail} disabled={dmSearchLoading() || (!dmSearchEmail().trim() && !dmSearchCode().trim())}>
+                    {dmSearchLoading() ? '...' : 'Cari'}
+                  </button>
+                </div>
+                <Show when={dmSearchError()}>
+                  <p class="dm-search-error">{dmSearchError()}</p>
+                </Show>
+                <Show when={dmSearchResult()}>
+                  {(result) => (
+                    <div class="dm-search-result">
+                      <div class="user-avatar" style="background:linear-gradient(135deg,#06b6d4,#0891b2);flex-shrink:0;">
+                        {result().avatar_url
+                          ? <img src={result().avatar_url} style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />
+                          : getInitials(result().email)
+                        }
+                      </div>
+                      <div class="user-info" style="flex:1;">
+                        <div class="user-name">{getDisplayName(result().email)}</div>
+                        <div class="user-status" style="color:var(--muted)">{result().email}</div>
+                      </div>
+                      <div style="display:flex;gap:6px;flex-shrink:0;">
+                        <button class="btn btn-secondary" style="padding:5px 10px;font-size:12px;" onClick={addFriendFromSearch} title="Tambah kontak">+</button>
+                        <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onClick={() => { setShowNewDmModal(false); setDmSearchEmail(''); setDmSearchCode(''); setDmSearchResult(null); navigateToDm(result().id, result().email); }}>Pesan</button>
+                      </div>
+                    </div>
+                  )}
+                </Show>
+              </div>
+
+              {/* Invite code/link section */}
+              <div class="dm-invite-section">
+                <p class="dm-invite-label">Kode / link undangan kamu:</p>
+                <Show when={myInviteCode()}>
+                  <div class="dm-invite-row" style="margin-bottom:4px;">
+                    <span class="dm-invite-link" style="font-family:monospace;font-size:14px;font-weight:700;letter-spacing:2px;">{myInviteCode()}</span>
+                    <button class="btn dm-copy-btn" onClick={copyInviteCode}>{dmLinkCopied() ? '✓' : 'Salin Kode'}</button>
+                  </div>
+                </Show>
+                <div class="dm-invite-row">
+                  <span class="dm-invite-link" style="font-size:11px;">{getMyInviteLink() || '(login untuk melihat link)'}</span>
+                  <button class="btn dm-copy-btn" onClick={copyInviteLink}>{dmInviteCopied() ? '✓ Disalin!' : 'Salin Link'}</button>
+                </div>
+              </div>
+            </Show>
+
+            {/* Online users tab */}
+            <Show when={dmModalTab() === 'online'}>
+              <div class="user-list" style="max-height:280px;overflow-y:auto;margin:12px 0;">
+                <For each={onlineUsers().filter(u => u.user_id !== myUserId)}>
+                  {(user) => (
+                    <button class="user-item" onClick={() => { setShowNewDmModal(false); navigateToDm(user.user_id, user.email); }}>
+                      <div class="user-avatar">{getInitials(user.email)}</div>
+                      <div class="user-info">
+                        <div class="user-name">{getDisplayName(user.email)}</div>
+                        <div class="user-status">● Online</div>
+                      </div>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </button>
+                  )}
+                </For>
+                <Show when={onlineUsers().filter(u => u.user_id !== myUserId).length === 0}>
+                  <p class="no-users">Tidak ada pengguna lain yang online di room ini.</p>
+                </Show>
+              </div>
+            </Show>
+
+            <button class="btn btn-secondary" style="width:100%;margin-top:4px;" onClick={() => { setShowNewDmModal(false); setDmSearchEmail(''); setDmSearchCode(''); setDmSearchResult(null); setDmSearchError(''); }}>Tutup</button>
+          </div>
+        </div>
+      </Show>
+
       <Show when={showCallMenu()}>
         <div class="modal-overlay" onClick={() => setShowCallMenu(false)}>
           <div class="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Select User to Call</h3>
             <div class="user-list">
               <For each={onlineUsers().filter(u => u.user_id !== myUserId)}>
-                {(user) => {
-                  console.log('[Call Modal] User:', user.email, 'ID:', user.user_id, 'Type:', typeof user.user_id);
-                  return (
-                    <button
-                      class="user-item"
-                      onClick={() => {
-                        console.log('[Call] Calling user:', user.user_id, 'Type:', typeof user.user_id);
-                        webrtcService.startCall(
-                          callMenuType(),
-                          user.user_id,
-                          user.email.split('@')[0]
-                        );
-                        setShowCallMenu(false);
-                      }}
-                    >
-                      <div class="user-avatar">{getInitials(user.email)}</div>
-                      <div class="user-info">
-                        <div class="user-name">{getDisplayName(user.email)}</div>
-                        <div class="user-status">Online</div>
-                      </div>
-                    </button>
-                  );
-                }}
+                {(user) => (
+                  <button class="user-item" onClick={() => { webrtcService.startCall(callMenuType(), user.user_id, user.email.split('@')[0]); setShowCallMenu(false); }}>
+                    <div class="user-avatar">{getInitials(user.email)}</div>
+                    <div class="user-info">
+                      <div class="user-name">{getDisplayName(user.email)}</div>
+                      <div class="user-status">Online</div>
+                    </div>
+                  </button>
+                )}
               </For>
               <Show when={onlineUsers().filter(u => u.user_id !== myUserId).length === 0}>
                 <p class="no-users">No other users online in this room</p>
@@ -1619,7 +2018,6 @@ export default function Chat() {
         </div>
       </Show>
 
-      {/* Call Interface Overlay */}
       <CallInterface />
     </>
   );

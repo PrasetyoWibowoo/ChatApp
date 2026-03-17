@@ -1,19 +1,12 @@
 import axios from 'axios';
 
 // Auto-detect API base URL
-// Priority: VITE_API_URL env var > derive from current hostname
+// Priority: VITE_API_URL env var > localhost fallback
 const getApiBaseUrl = () => {
-  // If explicitly set, use it
-  if (import.meta.env.VITE_API_URL) {
-    let url = import.meta.env.VITE_API_URL;
-    // Add https:// if missing protocol
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = `https://${url}`;
-    }
-    return url;
+  const envUrl = import.meta.env.VITE_API_URL as string | undefined;
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim();
   }
-  
-  // Fallback to localhost for development
   return 'http://localhost:8080';
 };
 
