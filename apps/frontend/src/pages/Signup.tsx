@@ -1,6 +1,5 @@
 import { createSignal } from 'solid-js';
 import api from '../lib/api';
-import { sendVerificationCode } from '../lib/api';
 
 export default function Signup() {
   const [email, setEmail] = createSignal('');
@@ -30,8 +29,7 @@ export default function Signup() {
       localStorage.setItem('username', username());
       localStorage.setItem('email', email());
 
-      // Send verification code and redirect to verification page
-      await sendVerificationCode(email());
+      // Redirect to verification page (it auto-sends the code on mount)
       window.location.href = `/verify-email?email=${encodeURIComponent(email())}`;
     } catch (err: any) {
       console.error('Signup error:', err);
